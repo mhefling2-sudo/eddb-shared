@@ -1,0 +1,117 @@
+# Course Design — Spec for the Site
+
+Ported from the console's Course Design tab (Course Material subbar). This covers the data model, the numbering rule, the QC gate, and attachment slots exactly as built and shipped on the console. Verb Governance is **not** part of this spec — the site already has its own `verbs` table (118 rows, confirmed live) with everything Course Design needs to look up. Build against that table directly rather than porting the console's separate verb-request workflow.
+
+## What this is
+
+A three-tier wire diagram per course: one TLO (Terminal Learning Objective) on the left, its supporting objectives (ELO, LSA, or PE) stacked beside it, and each ELO building out into its own LSAs. Boxes are positioned HTML, connecting lines are SVG. Tier names (TLO/ELO/LSA) are editable labels, not hardcoded, because the console and the governing lesson-plan template disagree on the vocabulary and the wording is left to Mike.
+
+## Data model
+
+One row per course for settings, one row per node in the tree. Suggested tables, following the site's existing conventions (uuid PK, `course_id` FK, `created_by`/`created_at`/`updated_at`, shared `set_updated_at` trigger):
+
+**`course_design_settings`**
+| column | type | notes |
+|---|---|---|
+| course_id | uuid, unique FK to courses | one row per course |
+| tier_labels | jsonb | `{t1:'TLO', t2:'ELO', t3:'LSA'}` by default, editable |
+| assessment_mode | text | `'test'` or `'pe'` — a course assessed by practical exercise is exempt from the post-test QC requirement |
+
+**`course_design_nodes`**
+| column | type | notes |
+|---|---|---|
+| id | uuid PK | |
+| course_id | uuid FK | |
+| parent_id | uuid, nullable FK to this table | null only for tier-1 (TLO) nodes |
+| tier | int | 1 = TLO, 2 = ELO/LSA/PE directly under a TLO, 3 = LSA/PE under an ELO |
+| type | text | `'ELO'`, `'LSA'`, or `'PE'` (tier 1 has no type, it's always the TLO) |
+| order_index | numeric | see Numbering below — this is the only ordering signal, not a stored number |
+| text | text | free-form label |
+| element | jsonb | `{environment, resources, verb, subject, standard}` — see Required fields below |
+| attachments | jsonb | keyed by slot id, each value an array of attachment records — see Attachment slots below |
+
+Nodes for one course form a tree via `parent_id`. A tier-1 node has `parent_id = null`. A tier-2 node's parent is a tier-1 node. A tier-3 node's parent is a tier-2 node with `type = 'ELO'` (LSAs and PEs can hang directly off a TLO at tier 2, or off an ELO at tier 3 — both are valid, the QC rules below treat them accordingly).
+
+## Numbering — derived, never stored
+
+This is the single most important rule in the whole feature. **Position IS the number.** Moving a node up, down, or to a different parent renumbers it and everything beneath it automatically, because the number is computed from where the node sits in the tree at render/query time, never written to a column. Storing a number would go stale the first time anything is reordered.
+
+Algorithm (matches the console's `cdNumberOf` exactly):
+
+- **Tier 1 (TLO):** `TLO {n}`, where `n` is the node's 1-based position among all tier-1 nodes for the course, ordered by `order_index`.
+- **Tier 2, type ELO:** `ELO {tloNum}.{letter}`, where `{letter}` is A, B, C... (base-26, so after Z comes AA) based on position among *sibling ELOs only* (LSAs and PEs at the same tier are numbered separately, see next line).
+- **Tier 2, type LSA or PE, parented directly to a TLO:** `LSA {tloNum}.{pos}` or `PE {tloNum}.{pos}` — note this **drops the letter**, it's a flat number under the TLO, not nested under an ELO letter.
+- **Tier 3 (LSA or PE under an ELO):** `LSA {tloNum}.{eloLetter}.{pos}` or `PE {tloNum}.{eloLetter}.{pos}`.
+
+Letters use base-26 (`cdLetterFor`): `A, B, C ... Z, AA, AB ...`.
+
+## Required fields by element type
+
+Set explicitly by Mike, not inferred:
+
+- **TLO and ELO:** all of `verb`, `subject`, `standard` are required. `environment` and `resources` are optional (available, used when filled, never demanded).
+- **LSA:** only `verb` and `subject` are required — an LSA is a step, not a full objective.
+- **PE:** no element fields required at all. A PE's completeness is judged by its attachment slots instead (see QC below).
+
+## Attachment slots
+
+Two slot sets depending on node type. Any tier-2 node except an ELO, and any tier-3 node, can carry attachments (`cdCanAttach`: tier 3 always; tier 2 only if `type !== 'ELO'`).
+
+**LSA slots:**
+| slot id | label | required |
+|---|---|---|
+| preAssessment | Pre-Assessment Questions | no |
+| postAssessment | Post-Assessment Questions | no |
+| slides | Slides | no |
+| rubric | Rubric | no |
+| references | Reference Material | no |
+| actions | Actions | no |
+
+**PE slots:**
+| slot id | label | required |
+|---|---|---|
+| instructions | Exercise Instructions | **yes** |
+| rubric | Evaluating Rubric | **yes** |
+| handouts | Supporting Materials | no |
+| exemplar | Exemplar Model | no |
+
+Each attachment record: `{id, label, addedOn, ...slot-specific extras}`. Post-assessment attachments additionally carry a `bank` field (`'Post A'` or `'Post B'`) — a course needs at least one question in **each** bank to pass QC (see below), they are independent sequences, not interchangeable.
+
+**Assessment question numbering** is its own derived sequence, separate from node numbering: questions number within their bank *across the whole course* (walking every LSA/PE in tree order), so `Pre Q1`, `Post A Q1`, `Post B Q1` each start their own count and continue incrementing as you move through the course, not restarting per-node.
+
+If the site has (or builds) a Product Record equivalent, an attachment can optionally mint or adopt a product record on creation (console does this via `prdEnsureForBuilder` when the slot has a `prdType` and a product-record system is present). Not required for a first build — treat as an enhancement if Product Record exists on the site by the time this is built.
+
+## The verb dependency
+
+Every element with a `verb` field needs three things looked up against the site's existing `verbs` table, matched by verb text (case-insensitive):
+
+1. **Bloom level** — `verbs.bloom_code` maps to one of `Remember, Understand, Apply, Analyze, Evaluate, Create` (ordinal — index matters, see QC rules below, "Analyze" is index 3, etc).
+2. **Approved / Do Not Use status** — a verb not present in `verbs`, or present with `retired_on` set, fails QC with a stop-severity issue naming the reason (`retired_reason` if present).
+3. Everything else the console's Verb Governance module computes (compatible assessment methods, MOI, strategies, delivery, learning styles) is **not needed for Course Design's own QC gate** — those are informational displays in the console's inspector panel, not enforced rules. Skip them for a first build unless there's a specific display requirement.
+
+## QC gate — every rule, exactly as enforced
+
+Run per-course, returns a list of issues each tagged to a `nodeId` (or empty string for course-level issues) and a severity (`stop` blocks accreditation-readiness, `info` is advisory only):
+
+1. **Missing required fields** — per the Required fields table above, one issue per missing field.
+2. **Unapproved or retired verb** — any node whose `verb` isn't a live entry in `verbs`.
+3. **Minimum children, TLO with ELOs:** if a TLO has any ELO children, it needs **at least 2**.
+4. **Minimum children, TLO with LSAs (no ELOs):** if a TLO has no ELO children, its direct LSA children need to number **at least 2**.
+5. **Minimum children, ELO:** every ELO needs **at least 2** LSA children.
+6. **Bloom-level match, "one must match":** among a parent's qualifying children (ELOs under a TLO, or LSAs under a TLO-with-no-ELOs, or LSAs under an ELO), **at least one** must sit at the exact same Bloom level as the parent.
+7. **Bloom-level ceiling, "none may exceed":** **no** child may sit at a *higher* Bloom level than its parent (index comparison on the ordinal list above).
+8. **PE required slots:** a PE missing `instructions` or `rubric` gets a stop issue; missing `handouts` or `exemplar` gets an info (advisory) issue instead.
+9. **Course-level assessment coverage:** unless `assessment_mode = 'pe'`, the course needs at least one Post A question and at least one Post B question somewhere in the tree (checked via the cross-course numbering walk above), each missing bank is its own stop issue with no `nodeId` (course-level, not attributable to one node).
+
+`clear` (accreditation-ready) means zero `stop`-severity issues. `info` issues never block.
+
+## What the console does NOT need duplicated
+
+- **Verb Governance's request/approve/decline workflow** — the site's `verbs` table is already the live source of truth; there's no need to rebuild the console's separate governance UI unless a future spec asks for it.
+- **Product Record integration** — nice-to-have, not required for the wire diagram or QC gate to function.
+- **Print view** — the console has a screenshot-ready print layout (`cdPrint`); worth a follow-up spec if wanted, not blocking.
+
+## Open items worth a decision before or during build
+
+- Should `course_design_nodes.attachments` stay as one jsonb blob per node (matches the console exactly, simplest port) or become its own table (`course_design_attachments`, one row per attachment)? The console's shape is jsonb; a real table would make the assessment-bank numbering query and any future reporting easier at the cost of a join. Recommend jsonb for a first build to match the console 1:1, revisit if attachments need their own queries later.
+- Tier-2 LSA/PE-directly-under-TLO is a real, supported shape (see Numbering above) — easy to miss if building from intuition rather than this spec, since most course structures nest under an ELO.

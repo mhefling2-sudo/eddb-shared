@@ -1,0 +1,131 @@
+# EDDB Console Design Reference, for the Site
+
+Pulled directly from the console's actual stylesheet and component patterns, not a visual approximation from a screenshot. Every value below is copy-pasted from the real source. This replaces screenshots as the design reference: it's exact, greppable, and covers the patterns that repeat across dozens of screens rather than describing each screen individually.
+
+**The bar, stated plainly, to carry into every decision below:** the site should never feel worse to use than the console. At minimum, match it. Ideally, exceed it. Right now it's the reverse, and that's the problem this document exists to fix.
+
+---
+
+## 1. Color tokens (exact values, not approximations)
+
+```css
+--navy:#0A2158;   /* primary brand, headers, active nav, primary buttons */
+--nl:  #0033A0;   /* hover/active state for navy elements, brighter navy */
+--gd:  #375623;   /* secondary accent, used for output blocks and one subbar group */
+--amb: #833C00;   /* tertiary accent, warnings-adjacent, one subbar group */
+--sl:  #374151;   /* primary body text */
+--mid: #6B7280;   /* secondary/muted text, labels, hints */
+--pale:#F0F4F8;   /* page background, input backgrounds */
+--wh:  #fff;
+--bdr: #CBD5E1;   /* default border color, used everywhere */
+--red: #B91C1C;   /* errors, destructive actions, overdue */
+--pur: #5B21B6;   /* accent, used sparingly (Instructor Meeting calendar kind) */
+--teal:#0F766E;   /* accent, used sparingly (TDY, toggle "on" state) */
+```
+
+Status/semantic colors used consistently across pills and badges, not tied to the tokens above, these are their own fixed palette:
+```css
+overdue: bg #FEE2E2, text #991B1B   (red family)
+soon:    bg #FEF3C7, text #92400E   (amber family)
+month:   bg #F1E4CE, text #7A5B22   (tan family)
+complete:bg #D1FAE5, text #065F46   (green family)
+default: bg #EEF0F3, text var(--mid)
+```
+
+Font: `-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`. Base body font size is **11px**, notably small and dense, this is a working tool for someone who uses it all day, not a marketing site. Monospace (`"Courier New", monospace`) is used specifically for generated output blocks (emails, memos) and bulk-paste textareas, signaling "this is raw text you'll copy," never for regular UI.
+
+## 2. The core layout shell
+
+- Whole app is capped at `max-width:1800px`, centered, with a `box-shadow:0 0 0 1px var(--bdr)` outline, sitting on a `--pale` (#F0F4F8) background. The app itself is a white card floating on a light gray page, not edge-to-edge.
+- Top-level navigation is a full-width navy bar (`--navy`), tabs are flex-equal-width, white text at 70% opacity when inactive (`#B9CBE0`), full white with an amber bottom border (`--amb`) and brighter navy background (`--nl`) when active.
+- Below that, most tabs have a **subbar**, a row of buttons for sub-sections. Subbar buttons are color-coded by category, not all navy:
+  - General: `#D8DCE1` bg, `#111827` text
+  - Travel/HR: `#D6C7EA` bg (light purple), `#111827` text
+  - Instructional: `#AFD2F0` bg (light blue), `#111827` text
+  - Supervisory: `#E1857C` bg (coral/red), white text
+  - Active state on ANY subbar button, regardless of its category color, snaps to navy with white text. Category color only shows when inactive.
+
+This category-coloring convention is a real, deliberate signal, not decoration, it tells the user what kind of tool they're in before they even read the label. Losing it in the site would lose real information, not just style.
+
+## 3. Form patterns (the most common screen type by far)
+
+The console's dominant UI pattern, used on the large majority of screens, is a vertical stack of label-input rows:
+
+```
+.fr   { flex row, 3px 8px padding, 1px bottom border #EEF0F3, min-height 26px, gap 6px }
+.lb   { label: 10px bold navy, uppercase, letter-spacing .03em, fixed width 110px }
+.fi   { input: 1px border var(--bdr), 8px radius, 3px/7px padding, pale background, 24px tall }
+.hint { 9.5px muted text, indented to align under the input (padding-left:118px, matching label width) }
+```
+
+A required field's label gets a small red marker (the `.rq` class), everything else about the row stays identical. This is the exact mechanism behind the Course Design field-visibility rule built today, required fields are marked, not styled differently in size or prominence.
+
+**Section headers within a form** (`.sh` + a color modifier) are small colored bars: navy (`.sh.nv`), green (`.sh.gn`), amber (`.sh.am`), teal (`.sh.tl`), used to break a long form into named sections without a full visual break.
+
+## 4. Buttons, three tiers, used consistently
+
+```css
+.genbtn  { navy bg, white text, 8px 18px padding, 12px font, 8px radius }  /* the ONE primary action per screen */
+.dbtn    { navy bg, white text, 6px 12px padding, 10.5px font, 8px radius } /* secondary actions */
+.dbtn.secondary { white bg, navy text, 1.5px navy border }                 /* tertiary/cancel-weight actions */
+.dbtn.danger { red bg }                                                    /* destructive only */
+```
+
+`.genbtn` is reserved for the one main "do the thing" action on a screen (Generate, Save, Add Entry). Everything else, including Save on a form that isn't the primary generator, uses the smaller `.dbtn`. This hierarchy matters, if every button looks the same weight, nothing tells the user what the primary action is.
+
+## 5. Filter chips and toggles
+
+```css
+.chip        { pill shape, 14px radius, white bg, muted text/border by default }
+.chip.active { navy bg, white text, navy border }
+```
+
+This is the exact pattern behind today's Course Material "This Week"/"Upcoming" fix, and the same pattern drives stat-box filters (`.statbox.statclick`, active state gets a 2px navy border and light navy-tinted background `#EEF3FA`). A toggle-style boolean control (`.tgl`) is a 36×18px rounded track, gray when off, teal when on, sliding knob, the standard "switch" pattern, not checkboxes for binary settings.
+
+## 6. Pills and badges (status-at-a-glance, everywhere)
+
+Two genuinely distinct pill systems exist on the console, on purpose, and the site should preserve the distinction rather than collapsing them into one generic "badge" component:
+
+- **`cmpill`** (OVERDUE/LEFT wording): red/amber/tan/green tiers, for anything with a real deadline, milestones, evals, due items.
+- **A separate "recency" pill** (SINCE/TILL wording, orange/light-green only): for things that already happened or haven't yet but aren't "overdue" in a deadline sense, a session's last-ran date isn't overdue, it's just in the past.
+
+Using the wrong wording on the wrong kind of date reads as a real error to someone who knows the difference (a completed session showing as "OVERDUE" is confusing, not just imprecise), this distinction is a genuine content-modeling decision the console already made correctly, worth carrying over intact.
+
+## 7. Cards (used for course/session/summary listings)
+
+```css
+.cmcard      { 1px border, 12px radius, white bg, column layout, overflow hidden }
+.cmcard-head { navy bg, white text, 10px/12px padding }
+.cmcard-badge{ amber-gold (#E8B54A) pill, navy text, uppercase, for a status label inside the header }
+.cmcard-body { 10px/12px padding }
+```
+
+A card is always: navy header with title + optional badge, white body below. This exact pattern is reused for course cards, session summaries, and similar "one item, several facts about it" displays.
+
+## 8. Tables (data-dense views: Lookup, Data tab, STAGE Inventory)
+
+```css
+th { sticky top:0, navy or pale background depending on context, uppercase 9-9.5px, letter-spacing .04em }
+td { 2-5px padding, 1px bottom border #EEF0F3 }
+tr:hover td { background #F5F8FB }
+```
+
+Tables are dense and sticky-headered, meant for scanning many rows quickly, not spaced out for casual browsing. The Data tab's editable tables go further: inputs inside cells are borderless until hover/focus (`border:1px solid transparent`, gains a border and pale background on hover, white background with navy border on focus), so a table of 50 editable rows doesn't look like 50 separate form fields at rest, only the one you're touching announces itself.
+
+## 9. What "site currently gets wrong" likely traces back to
+
+Without seeing the site's actual components, the categories most likely to be the real source of "it looks and feels different" are:
+
+1. **Missing the subbar category-coloring convention.** If every navigation element is one color, the site loses a real wayfinding signal the console has.
+2. **Button hierarchy collapsed.** If Save/Generate/Cancel all look the same weight, the primary action isn't obvious the way `.genbtn` vs `.dbtn` vs `.dbtn.secondary` makes it on the console.
+3. **Pills conflated into one generic badge style**, losing the OVERDUE-vs-SINCE distinction.
+4. **Font size and density.** 11px base, 26px-tall form rows, tight padding throughout, this is a dense, professional tool. If the site defaults to a typical 14-16px web app scale with generous spacing, it will feel like a different, less serious product even with identical colors.
+5. **The label-left, input-right form row pattern** (fixed 110px label column) is extremely consistent across the console. A site using stacked labels-above-inputs (a common modern default) will feel meaningfully different on nearly every screen, since this pattern appears more than any other single element in the console.
+
+---
+
+## How to use this with Code
+
+Rather than screenshotting every tab, hand this document over directly and ask Code to audit the site's current components against sections 3 through 8 specifically, since those are the patterns that repeat across the most screens and will have the largest visual impact if corrected. Section 9 is a hypothesis based on the tokens, not a confirmed diagnosis, Code should check it against the site's real components rather than assume it's accurate.
+
+If a specific screen still needs a screenshot after this (something visually unusual that doesn't reduce to these patterns, like Course Design's wire diagram or BC Slides), that's a much shorter, targeted list than "screenshot everything," and worth doing selectively rather than exhaustively.

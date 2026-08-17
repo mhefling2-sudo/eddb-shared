@@ -1,0 +1,58 @@
+# Goal: Site Design Parity, Mobile, Performance, and a Real Single Source of Truth
+
+This replaces the idea of rebuilding the site from scratch. Everything working today, Course Design, the shared-record architecture, the daily import job, Site Sync, stays. This goal is a scoped pass on top of it: fix how the site looks and feels, fill in placeholders that the console has already proven out, and fix data architecture so nothing is ever a copy of something that lives somewhere else.
+
+**The bar for all of it:** the site should never feel worse to use than the console. At minimum, match it. Ideally, exceed it. Right now it's the reverse, and that's what this goal exists to fix.
+
+---
+
+## 1. Design system pass, scoped, not a rebuild
+
+Use `Console_Design_Reference.md` (already delivered separately) as the source of truth for tokens and patterns, colors, spacing, the label-left form row, the three-tier button hierarchy, the two distinct pill systems, the subbar category-coloring convention. That document was pulled directly from the console's real CSS, not approximated from screenshots, treat its exact values as correct.
+
+**Do:** audit the site's current components against that document's sections 3 through 8 specifically, since those are the patterns that repeat across the most screens. Correct discrepancies in place. Section 9 of that document is a hypothesis about what's likely wrong, ranked by impact, check it against the real components rather than trusting it blindly.
+
+**Don't:** treat this as license to rebuild pages from scratch. If a component's underlying logic is correct and only its visual treatment is off, fix the visual treatment.
+
+## 2. Mobile
+
+The console is a desktop tool and always will be, it's a single HTML file built for a work machine, not a phone. The site has no such excuse and should be genuinely usable on a phone, this is one of the few places the site can legitimately exceed the console rather than just match it.
+
+Optimize for mobile using the same design language from section 1, adapted responsively, not a different visual identity on small screens. Whatever pattern reads as "the console's design language" on desktop (dense, professional, label-left forms, the three-tier button hierarchy) should still read that way on a phone, just reflowed, not redesigned.
+
+## 3. Split-screen / multi-pane performance
+
+The console has a real split-view feature, two synced panes, the second a live instance of the same tool, for working across two things at once. If the site builds or already has an equivalent multi-pane view, **actions in the second pane must respond in under 0.5 seconds.** This is a hard performance bar, not a target to approach, a second pane that lags behind the first defeats the entire point of having one.
+
+## 4. Placeholder parity, matched to the console's real state, not an aspirational one
+
+Build out any site placeholder that corresponds to something the **console itself has actually built and shipped.** Lesson Plan is the clearest example, it's a real, working tool on the console and a "coming soon" stub on the site, that gap should close.
+
+**Do not** build out a site placeholder for something that is *also* still a placeholder on the console, Assessment Builder, Slide Reviews, and Rubric Builder are unbuilt shells on the console itself as of this goal. There's nothing to match there yet. Building those out on the site first would mean the site and console disagree about what exists, the opposite of this goal's point. Check the console's real, current state before building any given placeholder, don't assume from an old plan or a name alone.
+
+## 5. Single source of truth, for real, across the whole system
+
+This is the most important part of this goal, and it generalizes something already proven true for Course Design to every kind of data in the system.
+
+**The principle:** every datum lives in exactly one place. Everything else reads it, nothing else stores its own copy. There can be several different sources of truth for different *kinds* of data, courses, sessions, products, personnel each have their own home, that's fine and expected. What's not fine is the same fact existing twice anywhere in the system.
+
+**Concretely, as you said it:** an ISS's identity and role lives in exactly one place (personnel/profiles) and is read by everything that needs to know who someone is, never re-stored. A course lives in exactly one place and is read by sessions, QA evals, timelines, and everything else that needs to know about that course, never re-stored. The same rule that already governs Course Design (a TLO's verb is one record, not copied into 833/SOI/Lesson Plan) applies to courses, sessions, products, and personnel too.
+
+**Two places this needs real attention, not just a restatement of the principle:**
+
+- **Within the site's own schema.** Audit whether course title, ISS name, or similar facts are duplicated as their own columns on tables like `qa_evals`, `course_material_timeline`, `training_log`, or others, instead of joined live from `courses` and `profiles`. Where they are, that's the same class of bug the shared-record work already fixed for Course Design, fix it the same way, remove the duplicate column, join live instead.
+- **Between the console and the site.** This is the harder, honest case, and it isn't actually solved yet. The console has no live API, so today's daily import is a once-a-day snapshot, not a live read. That means for as long as the console remains the primary data-entry tool for some of this data, there will be up to a day of lag between "true" and "what the site shows." That's a real, acknowledged gap in the single-source-of-truth goal, not something to paper over. Two honest paths forward, worth deciding rather than assuming: tighten the import to run more often (doesn't fully close the gap, reduces it), or treat specific data types as genuinely site-owned going forward with the console reading from the site instead of the reverse, which only works for data the console doesn't need to edit while offline or on the work network. Flag which data types fall into which category rather than assuming one answer covers all of them.
+
+## 6. Acceptance tests
+
+- Pick three real screens on the site. Confirm their colors, spacing, button hierarchy, and form layout match `Console_Design_Reference.md`'s documented values exactly, not approximately.
+- Load the site on an actual phone-width viewport. Confirm every primary action is reachable and legible without horizontal scrolling or pinch-zooming.
+- If a multi-pane view exists or gets built, time an action in the second pane. Under 0.5 seconds, measured, not estimated.
+- Pick one placeholder that got built out this pass. Confirm it was something real and working on the console first, not a placeholder-to-placeholder swap.
+- Query the site's database directly for course title or ISS name stored redundantly on a table that isn't `courses` or `profiles`. Confirm none exist, or confirm a plan exists to remove the ones that do.
+
+## 7. Explicitly out of scope for this goal
+
+- A full visual rebuild or new design language. This is a correction pass against an existing, already-defined system, not a redesign.
+- Closing the console-to-site data lag entirely. Section 5 asks for this to be named and planned, not solved in this pass, since solving it may require a decision about the console's own future that's bigger than a design pass.
+- Any placeholder the console itself hasn't built yet.

@@ -49,7 +49,7 @@ Letters use base-26 (`cdLetterFor`): `A, B, C ... Z, AA, AB ...`.
 
 Set explicitly by Mike, not inferred:
 
-- **TLO and ELO:** all of `verb`, `subject`, `standard` are required. `environment` and `resources` are optional (available, used when filled, never demanded).
+- **TLO and ELO:** all of `environment`, `verb`, `subject`, `standard` are required. `resources` is optional (available, used when filled, never demanded).
 - **LSA:** only `verb` and `subject` are required — an LSA is a step, not a full objective.
 - **PE:** no element fields required at all. A PE's completeness is judged by its attachment slots instead (see QC below).
 

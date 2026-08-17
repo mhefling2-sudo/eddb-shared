@@ -1,0 +1,104 @@
+# Goal: Shared-Record Architecture Across Course Design, 833, SOI, Lesson Plan, and the Learning Objective Tab
+
+This is the full, current goal, written clean after several rounds of adjustment. It replaces every prior partial version of this goal in conversation. Applies to both the console and eddbpond.com unless stated otherwise.
+
+---
+
+## 1. The core principle
+
+Course Design's node tree is the **single stored record** for any fact that describes what a course teaches. 833, SOI, Lesson Plan, and the Learning Objective tab do not keep their own copies of that fact. They read and write the same record.
+
+This is not a sync relationship. There is nothing to reconcile, because there is only one copy. Editing a verb from 833 *is* editing the Course Design node, not a copy of it that then needs to be pushed somewhere. "Last input wins, no hierarchy" falls out of this automatically: whichever tool you touched last simply holds the current value, because it's the only value.
+
+**What counts as a shared fact:** a TLO's, ELO's, or LSA's text, verb, subject, standard, environment, resources, and assessment questions.
+
+**What stays local to each tool, never shared:** 833's Media/MOI/Assessment Method selections and Day/Time scheduling fields, Lesson Plan's safety/environment boilerplate, SOI's day-by-day schedule and timing. These are genuinely that document's own content, not a fact about the objective itself. The 833's Day/Time duplicating the SOI's schedule was raised and deliberately left alone: pointing the 833 at the SOI would create a second single-source relationship nobody asked for, and would force an SOI to exist before an 833 could be started.
+
+## 2. Field requirements, exact and confirmed
+
+Two different rules, don't conflate them: which fields are **required**, and which fields are even **shown**.
+
+**Required fields (unchanged since 8/13, confirmed identical on both platforms):**
+- TLO: environment, verb, subject, standard
+- ELO, if used: environment, verb, subject, standard (same as TLO, not optional)
+- LSA: verb, subject only
+- PE: nothing, it has no element fields at all
+
+**Field visibility (new, built 2026-08-16):** a node type shows only the fields that apply to it, not all five with some merely unmarked.
+- TLO: environment, verb, subject, standard. No resources field at all.
+- ELO, if used: same four, plus resources as its one optional field.
+- LSA: verb, subject, resources. No environment, no standard, not even present and blank.
+- PE: no element panel at all, never reaches this logic.
+
+**Whether an ELO exists at all is a tree-shape choice, not a field-requirement one.** A TLO can be supported directly by LSAs with no ELO tier in between (the numbering rule already handles this: `LSA {tloNum}.{pos}`, dropping the middle letter). If an ELO is used, though, it carries the same required fields a TLO does. This was the source of a real cross-platform divergence found on 8/15/8/16: an earlier answer that "ELOs are optional" was about the tier being skippable, not about an ELO's own fields becoming optional once created. Making ELO fields genuinely optional would have silently broken the Bloom-alignment QC check (no verb means no Bloom level means the alignment check has nothing to compare and skips), which is why this got corrected rather than left as a divergence.
+
+## 3. QC rules, unchanged, stated in full for reference
+
+- A TLO with no ELOs needs at least 2 direct LSAs, at least one at the TLO's own Bloom level, none above it.
+- A TLO with ELOs needs at least 2 ELOs, at least one at the TLO's own Bloom level, none above it.
+- An ELO, if used, needs at least 2 LSAs, at least one at the ELO's own Bloom level, none above it.
+- A PE needs Exercise Instructions and an Evaluating Rubric (stop-severity if missing); Supporting Materials and an Exemplar are optional (info-severity if missing).
+- The course overall needs at least one Post A and one Post B assessment question somewhere in the tree, unless the course is marked as assessed by practical exercise.
+
+These rules are confirmed identical on both platforms as of this goal. Any future change to them needs to land on both at the same time, or QC-clear will mean different things on each.
+
+## 4. The Learning Objective tab
+
+The LO tab is not a fourth place objectives live. It's a course-spanning view onto the same nodes Course Design, 833, and Lesson Plan already read and write.
+
+**Scope: TLO, ELO, and LSA. Not PE.** PE has no objective content to show, being judged by attachment slots instead.
+
+**What it adds that Course Design's own view doesn't have:** Course Design shows one course's tree at a time. The LO tab shows every objective across every course, or every objective for a given ISS, searchable and filterable by verb, Bloom level, or completeness. Most of the original Learning Objective Tool job aid's columns already map onto fields the node model already has: condition is `environment`, the full objective statement is already computed (`cdElementStatement`), verb/subject/standard are already there. Render from the real node, don't rebuild these as separate stored columns.
+
+**Editing from the LO tab writes to the real node**, same as everywhere else in this architecture. No import step, no separate LO record to reconcile.
+
+**LSA rows will legitimately show blank Condition and Standard columns**, per the field-visibility rule in section 2. That's correct, not a gap, an LSA never had those fields.
+
+## 5. Product Record scope, and how LSA fits into it
+
+**Product Record itself does not change scope.** It stays exactly as built: only a TLO or an ELO gets its own "Learning Objectives" product record (`cdEnsureObjectiveProduct`, `isObjective = isT1 || (isT2 && node.type==='ELO')`). An LSA never gets its own product record.
+
+**What's new:** an LSA's row in the Learning Objective tab displays the product record(s) of its ancestor chain.
+- An LSA parented directly to a TLO (the tier-2, no-ELO-in-between shape) shows that one TLO's product.
+- An LSA nested under an ELO (tier-3) shows both the ELO's product and, one hop further up, the TLO's product.
+
+This is a display relationship, not new storage. An LSA node already knows its `parentId`, and walking one or two hops up that chain is the same traversal `cdNumberOf` already does to compute the LSA's own number. No new field belongs on the LSA node for this.
+
+## 6. Open question, not yet decided
+
+The original Learning Objective Tool job aid included a review status and reviewer comments per objective (ISS submits, a peer or the BC reviews and marks a status). Course Design's current node model has nothing like this.
+
+Two ways this could go, genuinely undecided:
+- Status and comments become part of the shared node record, visible identically from every tool, matching the shared-record principle everything else here follows.
+- Status and comments are LO-tab-specific state, not part of the node, because "has this been reviewed" might reasonably be considered LO-tab bookkeeping rather than a fact about the objective itself.
+
+Do not build either without a decision. This is explicitly out of scope until answered.
+
+**Also explicitly out of scope for now:** the job aid's Teams-based submission-for-review workflow, the routing between ISS, peer reviewer, and BC approval. That's a process built on top of the data, not a data-model question, and belongs in its own goal once the status/comments question above is settled.
+
+## 7. Acceptance tests
+
+Before calling any piece of this done:
+
+1. Edit a TLO's verb from 833. Confirm Course Design's wire diagram and QC gate reflect it immediately, no separate sync step.
+2. Write a Post A question from Lesson Plan (once it exists). Confirm it appears in Course Design's assessment count and 833's display with the identical computed number.
+3. Create or edit a TLO, an ELO, and an LSA from the Learning Objective tab. Confirm Course Design's diagram and QC gate reflect all three immediately.
+4. Confirm an LSA's LO-tab row shows exactly one ancestor product when parented directly to a TLO, and exactly two when nested under an ELO.
+5. Edit a node directly from Course Design. Confirm it shows up correctly in the LO tab's cross-course list with no refresh-and-resync action required.
+6. Confirm the same course's data produces the identical QC stop/info list and the identical accreditation-ready verdict on both platforms. If it doesn't, that's the bug to fix before anything else ships.
+
+If any of these requires an explicit sync, export, or reconciliation step to pass, the architecture is wrong, not just incomplete.
+
+## 8. Build sequencing
+
+1. **Course Design** — done, shipped on the console, live on the site.
+2. **833** — done on the console (link a lesson to a real node, question authoring through the shared attachment records). Live on the site per Code's build, including the shared `ElementPanel`/`AssessmentQuestions` components. Console-side migration of existing 833/SOI free-text data into real node links is still outstanding, since the console has real data where the site's tables started empty.
+3. **Lesson Plan** — not yet started on the console, does not exist on the site at all (currently a stub).
+4. **SOI** — not yet started on the console. Site-side schema (`soi_rows` with a nullable node link, teaching-row-vs-Break/Lunch constraint) is built.
+5. **Learning Objective tab** — this goal. Not yet started on either platform. Depends on nothing above being incomplete, since it only reads and writes nodes that already exist, but building it before Lesson Plan and SOI are wired up just means fewer entry points into the shared record exist yet, not that anything here is blocked.
+
+## 9. Key details to keep straight
+
+- **Numbering is always derived, never stored.** Moving a node renumbers it and everything beneath it. This applies to the LO tab's display too, don't cache a number anywhere.
+- **The site's `verbs` table is the live source for Bloom level and approved/retired status.** Neither platform needs a second verb-governance system for this goal, only the console has the request/approve workflow, and it isn't needed here.
+- **PE is excluded from field requirements, field visibility, and the Learning Objective tab, consistently, for the same reason each time**: it has no element content, only attachment slots.

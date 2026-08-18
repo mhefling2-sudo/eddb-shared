@@ -931,18 +931,20 @@ footer.appfoot{flex-shrink:0;border-bottom:1px solid var(--bdr);background:#ecea
     <div class="hint" style="padding-left:0;">Used only for the private notes archive repo (mhefling2-sudo/eddb-notes-archive). Never touches the shared/public repo.</div>
     <div class="fr"><input type="password" class="fi" id="ghc_notes" placeholder="github_pat_..." autocomplete="off"></div>
 
-    <div class="sh nv" style="margin-top:12px;">Console Push Token</div>
-    <div class="hint" style="padding-left:0;">Used only to push this console's own source file to the public mhefling2-sudo/eddb-shared repo, so a new Claude session or Code can read the current version directly instead of a manual upload. Fine-grained personal access token, Contents read/write on that repo only, nothing else.</div>
+    <div class="sh nv" style="margin-top:12px;">Shared Repo Push Token</div>
+    <div class="hint" style="padding-left:0;">Used to push any text file (this console, the ISS console, a handoff doc) to the public mhefling2-sudo/eddb-shared repo, so a new Claude session or Code can read it directly instead of a manual upload. Fine-grained personal access token, Contents read/write on that repo only, nothing else.</div>
     <div class="fr"><input type="password" class="fi" id="ghc_shared" placeholder="github_pat_..." autocomplete="off"></div>
 
     <div class="genrow"><button class="dbtn" id="ghc_save">Save</button><button class="dbtn secondary" id="ghc_recheck" style="margin-left:8px;">Re-check Storage</button><span class="hint" id="ghc_status" style="display:inline-block;margin-left:8px;"></span></div>
     <div id="ghc_stored" style="margin-top:6px;padding:6px 8px;border:1px solid var(--bdr);border-radius:8px;background:var(--pale);"></div>
 
-    <div class="sh nv" style="margin-top:18px;">Push Console Source to Repo</div>
-    <div class="hint" style="padding-left:0;">Pushes the real file from disk, not this live page's current DOM state (a running single-page app's DOM is not its source file, it's the source plus everything every render function has injected since load). Select the .html file you actually saved, confirm it's the right one below, then push. Lands at console/EDDB_Console.html on eddb-shared, main branch.</div>
-    <div class="fr"><input type="file" class="fi" id="ghc_push_file" accept=".html"></div>
+    <div class="sh nv" style="margin-top:18px;">Push File to Repo</div>
+    <div class="hint" style="padding-left:0;">For any text file you need available to a new Claude session or to Code without downloading, emailing, and re-uploading: this console, the ISS console, a session handoff doc, anything text-based. Pushes the real file from disk, not this live page's current DOM state (a running single-page app's DOM is not its source file, it's the source plus everything every render function has injected since load). Select the file you actually saved, confirm it's the right one and the destination path looks right, then push. Not for images, PDFs, or other binary files, this reads the file as text.</div>
+    <div class="fr"><input type="file" class="fi" id="ghc_push_file" accept=".html,.md,.txt,.json,.csv"></div>
     <div id="ghc_push_fileinfo" style="font-size:10.5px;color:var(--mid);padding:2px 0 4px 0;"></div>
-    <div class="fr"><div class="lb">Commit Message</div><input type="text" class="fi" id="ghc_push_msg" placeholder="Update EDDB_Console.html from console"></div>
+    <div class="fr"><div class="lb">Destination Path</div><input type="text" class="fi" id="ghc_push_path" placeholder="console/EDDB_Console.html"></div>
+    <div class="hint" style="padding-left:0;">Pre-filled with a guess based on the filename, always editable. Lands on eddb-shared, main branch.</div>
+    <div class="fr"><div class="lb">Commit Message</div><input type="text" class="fi" id="ghc_push_msg" placeholder="Update from console"></div>
     <div class="genrow"><button class="dbtn" id="ghc_push_btn" disabled>Push to eddb-shared</button><span class="hint" id="ghc_push_status" style="display:inline-block;margin-left:8px;"></span></div>
 </div>
 
@@ -1620,7 +1622,8 @@ const SESSION_STATUS_SEED = [
   {id:'ss_seed_20260817_p', category:'shipped', text:'Meeting Notes Meeting Type is no longer a Fixed Dropdown Registry entry (admin-only, required a trip to Data > Dropdowns > Fixed Dropdowns to add a new value). Replaced with a reusable select-or-type-new field backed by a new STATE.meetingTypeBank array, using the same createSingleSelect mechanism already proven on the attendee input right next to it and on the New Build/Iteration template fields. Typing a brand new meeting type and pressing Enter adds it to the bank inline and selects it immediately, same as picking an existing one. Added a one-time migration that seeds the new bank from any real (non-placeholder) values already sitting in the old Fixed Dropdown Registry entry, so nothing Mike may have already added is lost; only runs while the new bank is still empty. The old registry entry is left in place rather than deleted, same precedent as improvementTypes after its own bank migration, so any historical note referencing it still resolves. New STATE key registered correctly in all three required places (LS map, STATE init, persist map) plus GENERIC_SYNC_KEYS so it syncs like every other reusable bank. Verified with 12 assertions against the real extracted code: the migration correctly seeds from real values, correctly skips when only the placeholder was present, and correctly leaves an already-populated bank untouched; separately, wiring createSingleSelect the same way renderMeetingNotes does confirmed selecting an existing type loads its Perm attendees and does not duplicate it in the bank, and typing a new type adds exactly one bank entry despite createSingleSelect firing both addNew and onSelect on that path (checked specifically since that double-fire looked like a likely duplication bug before verifying it was not).', status:null, includedInHandoff:false, logged:'2026-08-17'},
   {id:'ss_seed_20260817_q', category:'shipped', text:'Added a Push Console Source to Repo feature, Data > GitHub Credentials, so a new Claude session or Code can read the current console file directly from eddb-shared instead of Mike downloading, emailing to himself, and re-uploading each time. Deliberately not a one-click DOM-serialization button: document.outerHTML reflects the live, already-rendered page (every table row, every open panel, everything every render function has injected since load), not the clean source file, so a button like that would push something that looks like the console but is not byte-for-byte the file Mike actually has. Built instead as a file picker: Mike selects the real .html file from disk, FileReader reads the actual bytes, and those are what get pushed, so what lands in the repo is provably the same file, not a DOM reconstruction. Added a fourth GitHub token, Console Push Token, scoped only to eddb-shared, kept separate from the other three rather than widening an existing token, matching the established one-token-per-purpose pattern; deliberately excluded from the general missing-token warning banner since nothing else in the app depends on it, only this one optional feature. Pushes to console/EDDB_Console.html on eddb-shared main, via a new pushRawTextFileToSharedRepo function that mirrors pushPrivateJSONFile\'s GET-sha-then-PUT shape but pushes raw text instead of JSON.stringify\'d content. File info (name, size) shown before the push button enables, so a wrong file gets caught before pushing rather than after. Verified before recommending eddb-shared as the target: grepped the current file for hardcoded tokens, confirmed none exist, the three fields visible in the GitHub Credentials UI are placeholder text in password inputs, actual tokens live only in STATE.githubCredentials/localStorage as intended. Verified the push function itself with 11 assertions against the real extracted code and a mocked fetch: correct create-vs-update branching (no sha on a 404, real sha included on an existing file), exactly two network calls in the right order, the Console Push token used specifically rather than one of the other three, pushed content round-trips byte-for-byte through the base64 encoding, and a missing token throws an error naming that exact token rather than a generic failure.', status:null, includedInHandoff:false, logged:'2026-08-17'},
   {id:'ss_seed_20260817_r', category:'shipped', text:'Added Cancelled as its own note status, distinct from Closed: a task that no longer needs doing and was never completed, versus one that was. Added to the noteStatus Fixed Dropdown Registry entry. noteSortLocation now moves Cancelled to cold on save, same as Closed, so nothing new needed at the point of closing a task out either way. Two other places checked for the same closed-means-done assumption and fixed to match: dpmMeasureOnTime (DPMAP performance dashboard) now excludes cancelled tasks from the on-time/late rate entirely rather than counting them as still-open backlog, since a cancelled task was never completed and scoring it as late would be wrong; the Calendar\'s due/suspense event gathering now also stops showing a cancelled item as still due, same as it already did for Closed. personnelOpenTasksFor needed no change, since it only reads STATE.notesHot and a cancelled note is already sorted out of hot by the same noteSortLocation fix. Verified by execution against the real extracted functions: a cancelled note moves to cold on save, does not appear in personnelOpenTasksFor, and KEEP HOT still overrides the move exactly as it already does for Closed.', status:null, includedInHandoff:false, logged:'2026-08-17'},
-  {id:'ss_seed_20260817_s', category:'shipped', text:'Fixed a live data-loss bug in the Notes Archive editor, found by checking whether the console had the same exposure Code just found and fixed on the site: loadNoteIntoForm set the STATUS <select>\'s value directly from the note\'s stored STATUS string. A <select> silently fails to select a value with no matching <option>, per the actual HTML spec algorithm, it does not fall back to the first option, it just reads back empty. The save handler then had if(!noteObj[\'STATUS\']) noteObj[\'STATUS\'] = \'Open\', so any note holding a real but non-standard status (a legacy value, or anything typed before this field became a registry-backed dropdown, e.g. a value like MERGED that exists in nobody\'s dropdown but is still somebody\'s real record) would get silently relabeled Open by editing and saving ANY other field on that note, no warning, no confirmation. Fixed the same way Code fixed the equivalent site-side bug: if the direct assignment does not stick (checked by comparing the select\'s value back against the note\'s real value), inject the real value as its own option so it can be selected, displayed, and saved back unchanged instead of silently discarded. Verified by execution against the real extracted loadNoteIntoForm with a faithful mock of actual <select> value-assignment semantics (matching an unmatched value to selectedIndex -1, not a fallback to the first option, which is the exact mechanic the bug and the fix both depend on): a standard status still loads and selects correctly with no extra option injected, a non-standard status (MERGED) is now preserved and actually selected rather than lost, and a control test proved the old single-line assignment really would have read back empty for that same case, confirming the bug was real before confirming the fix closes it.', status:null, includedInHandoff:false, logged:'2026-08-17'}
+  {id:'ss_seed_20260817_s', category:'shipped', text:'Fixed a live data-loss bug in the Notes Archive editor, found by checking whether the console had the same exposure Code just found and fixed on the site: loadNoteIntoForm set the STATUS <select>\'s value directly from the note\'s stored STATUS string. A <select> silently fails to select a value with no matching <option>, per the actual HTML spec algorithm, it does not fall back to the first option, it just reads back empty. The save handler then had if(!noteObj[\'STATUS\']) noteObj[\'STATUS\'] = \'Open\', so any note holding a real but non-standard status (a legacy value, or anything typed before this field became a registry-backed dropdown, e.g. a value like MERGED that exists in nobody\'s dropdown but is still somebody\'s real record) would get silently relabeled Open by editing and saving ANY other field on that note, no warning, no confirmation. Fixed the same way Code fixed the equivalent site-side bug: if the direct assignment does not stick (checked by comparing the select\'s value back against the note\'s real value), inject the real value as its own option so it can be selected, displayed, and saved back unchanged instead of silently discarded. Verified by execution against the real extracted loadNoteIntoForm with a faithful mock of actual <select> value-assignment semantics (matching an unmatched value to selectedIndex -1, not a fallback to the first option, which is the exact mechanic the bug and the fix both depend on): a standard status still loads and selects correctly with no extra option injected, a non-standard status (MERGED) is now preserved and actually selected rather than lost, and a control test proved the old single-line assignment really would have read back empty for that same case, confirming the bug was real before confirming the fix closes it.', status:null, includedInHandoff:false, logged:'2026-08-17'},
+  {id:'ss_seed_20260818_a', category:'shipped', text:'Generalized last night\'s Push Console Source to Repo feature into a real Push File to Repo tool, Data > GitHub Credentials, so Mike does not have to open the ISS console separately to push it, or invent a second mechanism for handoff docs. The underlying pushRawTextFileToSharedRepo function was already fully generic (any path, any text), only the UI was console-specific; nothing needed to change there. Added an editable Destination Path field, pre-filled with a guess from the selected filename via a new ghcGuessPushPath function (EDDB_Console.html and EDDB_ISS_Console.html, including realistic downloaded-copy filename variants like a browser-appended number, both route to their real console/ path; anything else defaults into a new handoffs/ folder), but the guess never overwrites a path Mike has typed himself, tracked via a small autofilled data attribute that flips off the moment he edits the field directly. Commit message default now derives from the actual destination filename instead of being hardcoded to EDDB_Console.html. Broadened the file picker\'s accept hint to the project\'s real text formats (.html/.md/.txt/.json/.csv) and added a plain note that this reads files as text, not for images or PDFs, Google Drive already covers those per existing convention. Renamed the token and its labels from Console Push (Token) to Shared Repo Push (Token) everywhere the label appears (heading, hint text, error messages, stored-report row) to match the broader purpose; the underlying storage key and the token value itself are unchanged, so nothing Mike already saved needs to be re-entered. Verified by execution: 5 assertions against the real extracted path-guessing logic, including the exact real ISS console filename pattern already seen in this project (EDDB_ISS_Console__11_.html, a browser auto-renamed duplicate), confirming it still resolves to the correct console/EDDB_ISS_Console.html path rather than falling through to the handoffs/ default.', status:null, includedInHandoff:false, logged:'2026-08-18'}
 ];
 function mergeSessionStatusSeed(){
   const localIds = new Set(STATE.sessionStatus.map(r=>r.id));
@@ -3218,7 +3221,7 @@ function requireGithubToken(key, label){
        the common case turns out to be a token pasted into the wrong field. */
     const stored = ghcStoredReport();
     throw new Error(label+' is not set. Go to Data > GitHub Credentials, fill the "'+
-      (key==='notesToken'?'Notes Archive':key==='requestToken'?'Requests':key==='sharedToken'?'Console Push':'Main Sync')+
+      (key==='notesToken'?'Notes Archive':key==='requestToken'?'Requests':key==='sharedToken'?'Shared Repo Push':'Main Sync')+
       '" box and press Save. Currently stored: '+stored+'.');
   }
   return val;
@@ -3358,7 +3361,7 @@ const SHARED_OWNER = 'mhefling2-sudo';
 const SHARED_REPO = 'eddb-shared';
 const SHARED_BRANCH = 'main';
 async function pushRawTextFileToSharedRepo(path, text, commitMessage){
-  const token = requireGithubToken('sharedToken', 'Console Push Token');
+  const token = requireGithubToken('sharedToken', 'Shared Repo Push Token');
   const apiUrl = 'https://api.github.com/repos/'+SHARED_OWNER+'/'+SHARED_REPO+'/contents/'+path;
   let sha;
   const getResp = await fetch(apiUrl+'?ref='+SHARED_BRANCH, {
@@ -25004,7 +25007,7 @@ function initGithubCredentials(){
     el.innerHTML = row('Main Sync', s.token, mem.token) +
                    row('Requests', s.requestToken, mem.requestToken) +
                    row('Notes Archive', s.notesToken, mem.notesToken) +
-                   row('Console Push', s.sharedToken, mem.sharedToken);
+                   row('Shared Repo Push', s.sharedToken, mem.sharedToken);
   }
 
   /* Hardened 2026-08-13. Previously a single missing element here threw a
@@ -25013,7 +25016,7 @@ function initGithubCredentials(){
      clicking Save would do nothing, silently, which matches every symptom
      Mike reported. Now the elements are checked first and a missing one is
      reported on screen instead of killing the wiring. */
-  const need = ['ghc_main','ghc_request','ghc_notes','ghc_shared','ghc_save','ghcreds_warn','ghc_stored','ghc_push_file','ghc_push_btn','ghc_push_msg','ghc_push_status','ghc_push_fileinfo'];
+  const need = ['ghc_main','ghc_request','ghc_notes','ghc_shared','ghc_save','ghcreds_warn','ghc_stored','ghc_push_file','ghc_push_path','ghc_push_btn','ghc_push_msg','ghc_push_status','ghc_push_fileinfo'];
   const missing = need.filter(id=>!document.getElementById(id));
   if(missing.length){
     const w = document.getElementById('ghcreds_warn') || document.getElementById('ghc_status');
@@ -25087,17 +25090,35 @@ function initGithubCredentials(){
     refreshPushButtonState();
   });
 
-  /* Push Console Source to Repo. Reads the real file the user picked via
-     FileReader, not this page's own DOM, see the comment on
-     pushRawTextFileToSharedRepo for why that distinction is load-bearing.
-     Kept as a picked File plus a fresh read at push time (not read once
-     into a stored string) so picking a different file always wins, and so
-     nothing here holds a stale copy in memory across re-renders of this
-     tab. */
+  /* Push File to Repo. Reads the real file the user picked via FileReader,
+     not this page's own DOM, see the comment on pushRawTextFileToSharedRepo
+     for why that distinction is load-bearing. Kept as a picked File plus a
+     fresh read at push time (not read once into a stored string) so
+     picking a different file always wins, and so nothing here holds a
+     stale copy in memory across re-renders of this tab.
+
+     Generalized 2026-08-18 from a console-source-only button into a real
+     push-any-text-file tool, so this one place (not both consoles
+     separately) covers the console, the ISS console, and any handoff doc
+     Mike wants a new session or Code to read directly. The underlying
+     push function was always generic, only the UI was console-specific. */
   let ghcPushSelectedFile = null;
+
+  /* A guess, not a rule, the path field stays fully editable regardless.
+     The two known console files get their established console/ location;
+     anything else defaults to handoffs/, a reasonable home for session
+     handoff docs specifically, which is the other named use case. */
+  function ghcGuessPushPath(filename){
+    if(filename==='EDDB_Console.html') return 'console/EDDB_Console.html';
+    if(filename==='EDDB_ISS_Console.html') return 'console/EDDB_ISS_Console.html';
+    if(/^EDDB_ISS_Console/i.test(filename) && filename.toLowerCase().endsWith('.html')) return 'console/EDDB_ISS_Console.html';
+    return 'handoffs/'+filename;
+  }
+
   function refreshPushButtonState(){
     const btn = document.getElementById('ghc_push_btn');
     const info = document.getElementById('ghc_push_fileinfo');
+    const pathInput = document.getElementById('ghc_push_path');
     if(!btn || !info) return;
     const hasToken = !!(STATE.githubCredentials||{}).sharedToken;
     if(!ghcPushSelectedFile){
@@ -25105,9 +25126,13 @@ function initGithubCredentials(){
       btn.disabled = true;
     } else {
       const kb = (ghcPushSelectedFile.size/1024).toFixed(0);
-      info.textContent = 'Selected: '+ghcPushSelectedFile.name+' ('+kb+' KB). Confirm this is the file you meant before pushing.';
+      info.textContent = 'Selected: '+ghcPushSelectedFile.name+' ('+kb+' KB). Confirm this is the file you meant and the path below looks right before pushing.';
+      if(!pathInput.value.trim() || pathInput.dataset.autofilled==='1'){
+        pathInput.value = ghcGuessPushPath(ghcPushSelectedFile.name);
+        pathInput.dataset.autofilled = '1';
+      }
       btn.disabled = !hasToken;
-      if(!hasToken) info.textContent += ' Console Push Token is not set above, save it first.';
+      if(!hasToken) info.textContent += ' Shared Repo Push Token is not set above, save it first.';
     }
   }
   const fileInput = document.getElementById('ghc_push_file');
@@ -25115,12 +25140,24 @@ function initGithubCredentials(){
     ghcPushSelectedFile = (e.target.files && e.target.files[0]) || null;
     refreshPushButtonState();
   });
+  const pathInputEl = document.getElementById('ghc_push_path');
+  if(pathInputEl) pathInputEl.addEventListener('input', ()=>{
+    // Once Mike types into it himself, stop overwriting his edit with a
+    // fresh guess if he picks a different file afterward.
+    pathInputEl.dataset.autofilled = '0';
+  });
   refreshPushButtonState();
 
   const pushBtn = document.getElementById('ghc_push_btn');
   if(pushBtn) pushBtn.addEventListener('click', ()=>{
     if(!ghcPushSelectedFile) return;
     const statusEl = document.getElementById('ghc_push_status');
+    const path = gvv('ghc_push_path').trim();
+    if(!path){
+      statusEl.style.color = 'var(--red)';
+      statusEl.textContent = 'Enter a destination path first.';
+      return;
+    }
     pushBtn.disabled = true;
     statusEl.style.color = 'var(--sl)';
     statusEl.textContent = 'Reading file...';
@@ -25138,12 +25175,12 @@ function initGithubCredentials(){
         pushBtn.disabled = false;
         return;
       }
-      const msg = gvv('ghc_push_msg').trim() || ('Update EDDB_Console.html from console, '+todayISO());
+      const msg = gvv('ghc_push_msg').trim() || ('Update '+path.split('/').pop()+' from console, '+todayISO());
       statusEl.textContent = 'Pushing '+(text.length/1024).toFixed(0)+' KB to eddb-shared...';
       try{
-        const result = await pushRawTextFileToSharedRepo('console/EDDB_Console.html', text, msg);
+        const result = await pushRawTextFileToSharedRepo(path, text, msg);
         statusEl.style.color = 'var(--gd)';
-        statusEl.textContent = 'Pushed. console/EDDB_Console.html on eddb-shared, '+(result.size/1024).toFixed(0)+' KB'+(result.commitSha?', commit '+result.commitSha.slice(0,7):'')+'.';
+        statusEl.textContent = 'Pushed. '+path+' on eddb-shared, '+(result.size/1024).toFixed(0)+' KB'+(result.commitSha?', commit '+result.commitSha.slice(0,7):'')+'.';
       }catch(err){
         statusEl.style.color = 'var(--red)';
         statusEl.textContent = 'Push failed: '+err.message;

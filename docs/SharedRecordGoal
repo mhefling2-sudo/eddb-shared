@@ -93,7 +93,7 @@ If any of these requires an explicit sync, export, or reconciliation step to pas
 
 1. **Course Design** — done, shipped on the console, live on the site.
 2. **833** — done on the console (link a lesson to a real node, question authoring through the shared attachment records). Live on the site per Code's build, including the shared `ElementPanel`/`AssessmentQuestions` components. Console-side migration of existing 833/SOI free-text data into real node links is still outstanding, since the console has real data where the site's tables started empty.
-3. **Lesson Plan** — not yet started on the console, does not exist on the site at all (currently a stub).
+3. **Lesson Plan** — real and shipped on the console (a child tab on Course Materials: `renderLessonPlan`/`lpFreshDraft`/`lpSentence`/`lpQuantityCheck`). Built on the site 2026-08-17, ported from that source, with one deliberate divergence: the console's draft holds `tloVerb`, `tloSubject`, `tloBullets` and an `lsas` array carrying its own copy of every verb and subject, and the site's does not — it stores which TLO it teaches and reads the objective and its LSAs from `course_design_nodes`, per this goal. The console's own copies are the outstanding item on that side.
 4. **SOI** — not yet started on the console. Site-side schema (`soi_rows` with a nullable node link, teaching-row-vs-Break/Lunch constraint) is built.
 5. **Learning Objective tab** — this goal. Not yet started on either platform. Depends on nothing above being incomplete, since it only reads and writes nodes that already exist, but building it before Lesson Plan and SOI are wired up just means fewer entry points into the shared record exist yet, not that anything here is blocked.
 

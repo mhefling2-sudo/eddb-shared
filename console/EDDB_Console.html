@@ -451,7 +451,7 @@ footer.appfoot #appVersion{flex:none;font-weight:700;letter-spacing:.03em;white-
 
        Bump the major and reset the minor on a new feature; bump the minor on a
        build that only fixes something. -->
-  <footer class="appfoot"><span class="footmsg">All data lives in this browser's local storage on this device. Course and file naming data syncs with GitHub. <span id="githubSyncStatus">Checking GitHub...</span> <span id="notesAutoSyncStatus" style="margin-left:10px;"></span></span><span id="appVersion" title="Console version">v5.0</span></footer>
+  <footer class="appfoot"><span class="footmsg">All data lives in this browser's local storage on this device. Course and file naming data syncs with GitHub. <span id="githubSyncStatus">Checking GitHub...</span> <span id="notesAutoSyncStatus" style="margin-left:10px;"></span></span><span id="appVersion" title="Console version">v5.2</span></footer>
   <div id="storageWarningBanner" style="display:none;background:var(--red);color:#fff;padding:8px 14px;font-size:11.5px;font-weight:700;flex-shrink:0;">
     <span id="storageWarningText"></span>
     <button id="storageWarningDismiss" style="margin-left:12px;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.5);color:#fff;border-radius:5px;padding:2px 8px;font-size:10px;font-weight:700;cursor:pointer;">Dismiss</button>
@@ -2147,6 +2147,16 @@ const SESSION_STATUS_SEED = [
   {id:'ss_seed_20260821_x', category:'shipped', text:'What failed on 21 August was not the pushing, it was the noticing: v4.1 shipped, was never pushed, and the repo sat on v3.0 while a session was told it was current. So the noticing is what got automated. On boot the console reads the version out of console/EDDB_Console.html on eddb-shared, unauthenticated since the repo is public, compares it to its own #appVersion, and shows an amber banner only when the repo is genuinely behind. Push it now closes the banner, lands on Data > GitHub Credentials, and pre-fills the destination path to console/EDDB_Console.html. That pre-fill is the point as much as the banner is: the path field otherwise guesses from the filename, so pushing EDDB_Console_5.0.html would create a second console at a new path and leave the repo holding two. The one route that exists to fix a stale repo should not be able to make a worse mess.', status:null, includedInHandoff:false, logged:'2026-08-21'},
   {id:'ss_seed_20260821_y', category:'decision', text:'Three deliberate choices in the freshness check, each one a way it could have been annoying or wrong. It stays completely silent when GitHub is unreachable, because this is a convenience and a console that cannot reach the network should still open without an alarming banner about it; a 500, a timeout and a hard abort all produce nothing. Not now is recorded against the version that raised it rather than as a permanent flag, so dismissing it for v5.0 does not also silence v5.1, which is a different fact about a different build. And the comparison is numeric per component rather than a string compare, because a string compare calls v4.10 older than v4.9 and that would have gone unnoticed for months. Also hoisted ghcExtractVersion, ghcFetchRepoVersion and GHC_TRACKED_CONSOLES out of initGithubCredentials to module scope so the boot check and the Credentials panel answer what version is in the repo through one function, not two copies.', status:null, includedInHandoff:false, logged:'2026-08-21'},
   {id:'ss_seed_20260821_z', category:'shipped', text:'Verified the freshness banner by driving the real console in real Chromium, 27 assertions, with every outbound request except the one under test deliberately aborted so the result cannot depend on the sandbox having connectivity. Covered: repo behind shows the banner naming both versions, repo level or ahead shows nothing, a missing file and an unversioned file each warn with their own wording, an abort and a 500 both stay silent and throw nothing, Not now survives a reload for the same version but not for a different one, and Push it now closes the banner, activates the Data tab and the GitHub Credentials subtab, and leaves the destination path reading console/EDDB_Console.html. Four deliberate breaks all caught. One of those breaks initially reported NOT CAUGHT and the test was right: the break script had anchored on a string appearing six times in the file and had patched an unrelated catch block, so nothing under test had actually changed. Anchoring a break on a non-unique string tests nothing, exactly like anchoring a test on one.', status:null, includedInHandoff:false, logged:'2026-08-21'},
+  {id:'ss_seed_20260821_aa', category:'shipped', text:'Mike pushed v5.0, the push reported success naming commit 64e5d99, and Check Repo Versions clicked immediately after still read v4.1. The push was fine: a fresh clone confirmed the repo held v5.0 at exactly that commit. The READ was stale, and the byte count proved which: the panel showed 2.27 MB, v4.1 to the byte, not v5.0. raw.githubusercontent.com sits behind a CDN serving a five minute max-age that normalises unknown query strings out of its cache key, so the ?t=Date.now() buster did nothing, and cache no-store only governs the browser cache rather than the CDN. Checking the version once BEFORE pushing is what warms that cache, which means the earlier read is what guarantees the next one is wrong. The check was reliably wrong exactly when it mattered most.', status:null, includedInHandoff:false, logged:'2026-08-21'},
+  {id:'ss_seed_20260821_ab', category:'shipped', text:'Fixed by pinning the read to an immutable commit rather than trying to out-argue a cache. A raw URL naming a sha can never be stale because the bytes at a sha do not change; the sha comes from api.github.com, which is not behind that CDN, and Accept: application/vnd.github.sha returns it as forty characters of plain text rather than a whole commit object. Also range-limited to the first 64 KB, since the version marker sits at byte 31,703 of a 2.3 MB file, 1.3 percent in, so the boot check stops pulling megabytes to read five characters; a server that ignores Range answers 200 with the whole body and parses identically, so it degrades safely with no capability check. If the sha lookup fails the read falls back to the old unpinned URL and is marked stale, and a stale answer never raises the boot banner, because a banner claiming the repo is behind ninety seconds after it was updated is worse than no banner. The Credentials panel still shows the number, labelled as possibly cached. Separately, the push now records what it wrote and at which commit, so the panel reports from the push rather than re-reading a cache it just invalidated.', status:null, includedInHandoff:false, logged:'2026-08-21'},
+  {id:'ss_seed_20260821_ac', category:'shipped', text:'Browser suite extended to 34 assertions covering the pinning: it asks the API for the head sha first, the raw URL carries the sha and not the branch, no ?t= buster survives on a pinned URL, the request is range-limited, a 206 is accepted, an unconfirmable read stays silent, and a sha-confirmed older repo still warns. Four deliberate breaks caught, including reverting to the unpinned URL, which is Mike\'s exact bug. A fifth break was NOT caught and that was the useful one: removing an explicit resp.status !== 206 guard changed nothing, because Response.ok is already true across 200-299 and 206 is in that range. The guard was dead code implying partial responses needed special handling here when they do not, so it was deleted rather than left in with a test bolted around it.', status:null, includedInHandoff:false, logged:'2026-08-21'},
+  {id:'ss_seed_20260821_ad', category:'openquestion', text:'REF collisions reported by the Memory Hole project, four this week: 2356, 2396, then 2400 and 2391 in one batch. Root cause found, not fixed. nextNoteRef() derives the high-water mark by scanning STATE.notesHot and STATE.notesCold, which is only what THIS browser can see. A note logged anywhere the console has not synced from is invisible to the allocator, so the number gets reissued. REF 2400 was itself the note recording that the notes archive sync had failed, which is the whole mechanism in one line: the failed sync is why the console could not see the note, and the note was about the failed sync. Meanwhile the site already has the correct answer built and unused. ref_allocator_status reports the sequence at 3016 with next_ref 3017 against a highest written REF of 2397, and reserve_ref_block(p_count, p_local_high) exists specifically to hand a client a block while accounting for what it has already issued locally. The console has never called it, which is why it is still issuing in the 2390s while the authority sits at 3017. Needs Mike\'s decision: wiring every REF-issuing path in the console to reserve through that RPC is the real fix and touches roughly 60 call sites.', status:'Open', includedInHandoff:false, logged:'2026-08-21'},
+  {id:'ss_seed_20260821_ae', category:'openquestion', text:'Second and separate defect in the same report: six duplicate entries inside one closeout batch, three identical pairs at 2400/2402, 2401/2403 and 2404/2405, plus REF 2391 and 2394 each carrying Closed out: Completed. three times. This is not an allocator fault, the REFs increment correctly. issCheckInCloseoutMeeting is not idempotent, and the 2026-08-18 error handling made that reachable: on a throw part way through it deliberately leaves everything already written in place and does NOT clear the draft, and tells Mike nothing he entered is lost, which reasonably invites a retry. A retry re-runs from step 1 and rewrites every item the first attempt got through, with fresh REFs, so a partial failure followed by a retry duplicates exactly the items that succeeded. The three-times case is the Other Open Items branch, which appends to an existing note text rather than replacing it, so it accumulates once per attempt. Fix is per-item commit tracking on the draft so a retry skips what already succeeded; the append path also needs to stop growing note text unconditionally. Not built, flagged the same session it was reported.', status:'Open', includedInHandoff:false, logged:'2026-08-21'},
+  {id:'ss_seed_20260821_af', category:'shipped', text:'Found the REF collision cause and it was not a broken allocator, it was an allocator with no consumer. The console already reserves blocks from the site: ssReserveRefBlock calls reserve_ref_block, stores the result in siteSync.refBlock, shows a REFs reserved count on the Site Sync panel and warns when the block runs low. All of that shipped and all of it works. ssTakeReservedRef, the function that spends one, appeared exactly once in the whole file: its own definition. Nothing ever called it. Every REF actually issued still came from the local counter, so the console reserved blocks and threw them away. The database says the same thing in numbers: the sequence sits at 3016 while the highest REF ever written is 2397, and that 619 of headroom is not spare capacity, it is the pile of reserved blocks never spent, while the console kept issuing in the 2390s where the archive already had notes. Corrected an earlier estimate to Mike in the same session: this was described as touching roughly 60 call sites, which was wrong. All 78 REF-issuing sites already funnel through nextSharedRef, so the wiring is one function.', status:null, includedInHandoff:false, logged:'2026-08-21'},
+  {id:'ss_seed_20260821_ag', category:'decision', text:'Wired as peek-then-spend rather than take-on-read, because nextSharedRef is a peek and commitSharedRef is the advance, and 78 call sites already depend on that split. nextSharedRef reads refBlock[0] without removing it, since it is called to DISPLAY a number on every render of the REF field, and shifting there would burn a reserved REF every time a panel drew. commitSharedRef removes the head only when the number actually used matches it, so a hand-typed REF or a fallback issued while the block was empty cannot silently consume a reservation it never touched. Deliberately does NOT auto-reserve when the block runs dry: reservation carries readiness guards for a real reason, since a machine with a stale archive reserving would hand back numbers already in use, and firing a network call from inside a synchronous getter that runs on every render is the wrong shape. It falls back to the local counter and the existing Site Sync warning stands.', status:null, includedInHandoff:false, logged:'2026-08-21'},
+  {id:'ss_seed_20260821_ah', category:'shipped', text:'Added ssPruneReservedBelow, which drops reserved REFs at or below a number already issued. Two guards were needed, not one. Refusing a stale reserved REF protects against handing back a number already on a sent note, the single unrecoverable outcome here. But refusing alone would jam the block: one stale entry at the head would be declined on every call, never consumed, and every good number behind it unreachable forever. That is not hypothetical, it is the state the console is in right now, because blocks have been reserved since Site Sync shipped and never spent, so a long-held block can begin well below where the archive has since reached. Pruning only ever discards numbers that cannot safely be used.', status:null, includedInHandoff:false, logged:'2026-08-21'},
+  {id:'ss_seed_20260821_ai', category:'shipped', text:'Verified with 30 executed assertions against code extracted from the shipped file, plus six deliberate breaks all caught. Covers the peek/spend split, a peek not consuming, a non-matching commit leaving the block alone, the no-block fallback still self-correcting against the archive, a stale head not jamming a good tail, a full four-note check-in batch drawing consecutive reserved numbers with no duplicates, and a throwing ssCfg never taking REF allocation down with it. T5 reproduces Mike\'s actual collision: with an archive missing REF 2400 because the notes sync failed, the old path reissues 2400, and with a block held it issues 3017 instead. One assertion is deliberately a source check rather than a behaviour check, asserting that ssPeekReservedRef is called and not merely defined, because a unit test of a function nothing calls is precisely what let this ship in the first place.', status:null, includedInHandoff:false, logged:'2026-08-21'},
+  {id:'ss_seed_20260821_aj', category:'nextstep', text:'The fix only takes effect once a block is actually held. Mike needs to check the REFs reserved count on Branch Admin > Site Sync and reserve if it is low, and the readiness guard will require a pull first. Still open and untouched: closeout is not idempotent, so a partial failure followed by a retry duplicates every item the first attempt got through, which is what produced 2400/2402, 2401/2403 and 2404/2405 as identical pairs. That needs per-item commit tracking on the draft, and the Other Open Items branch separately needs to stop appending to note text unconditionally, which is why 2391 and 2394 each carry Closed out: Completed. three times.', status:'Open', includedInHandoff:false, logged:'2026-08-21'},
 ];
 function mergeSessionStatusSeed(){
   const localIds = new Set(STATE.sessionStatus.map(r=>r.id));
@@ -4554,16 +4564,67 @@ const GHC_TRACKED_CONSOLES = [
    Deliberately not the contents API, which caps around 1 MB and would return a
    placeholder for a 2 MB console instead of the file. Cache-busted, because a
    stale answer here is worse than none. */
+/* Reported by Mike 2026-08-21: he pushed v5.0, the push reported success with a
+   commit sha, and Check Repo Versions clicked immediately after still read
+   v4.1. The push was fine. A fresh clone confirmed the repo held v5.0 at the
+   exact commit the push named. The READ was stale, and the byte count proved
+   it: the panel showed 2.27 MB, which is v4.1's size to the byte, not v5.0's.
+
+   raw.githubusercontent.com sits behind a CDN that serves a five minute
+   max-age and normalises unknown query strings out of its cache key. So the
+   '?t='+Date.now() buster did nothing, and cache:'no-store' only governs the
+   browser's own cache, not the CDN's. Checking the version once BEFORE pushing
+   is what warms that cache, which means the old read is what guarantees the
+   next one is wrong. The check was reliably wrong exactly when it mattered.
+
+   Fixed by pinning to an immutable commit. A raw URL that names a sha can
+   never be stale, because the bytes at a sha do not change. The sha itself
+   comes from the API, which is not behind that CDN, and Accept: sha returns it
+   as forty characters of plain text rather than a commit object.
+
+   Also range-limited. The version marker sits at byte 31,703 of a 2.3 MB file,
+   1.3% in, so 64 KB is ample and the boot check stops pulling megabytes to read
+   five characters. A server that ignores Range answers 200 with the whole body,
+   which parses identically, so this degrades safely rather than needing a
+   capability check.
+
+   If the sha lookup fails (offline, rate limited) it falls back to the old
+   unpinned read and marks the answer stale:true, so a caller can say the
+   number may be out of date instead of presenting a guess as fact. */
+async function ghcResolveHeadSha(){
+  const url = 'https://api.github.com/repos/'+SHARED_OWNER+'/'+SHARED_REPO+'/commits/'+SHARED_BRANCH;
+  const resp = await fetch(url, {headers:{'Accept':'application/vnd.github.sha'}, cache:'no-store'});
+  if(!resp.ok) return null;
+  const sha = (await resp.text()).trim();
+  return /^[0-9a-f]{40}$/i.test(sha) ? sha : null;
+}
 async function ghcFetchRepoVersion(path){
-  const url = 'https://raw.githubusercontent.com/'+SHARED_OWNER+'/'+SHARED_REPO+'/'+SHARED_BRANCH+'/'+path+'?t='+Date.now();
-  const resp = await fetch(url, {cache:'no-store'});
-  if(resp.status === 404) return {state:'missing'};
+  let sha = null;
+  try{ sha = await ghcResolveHeadSha(); }catch(e){ sha = null; }
+  const ref = sha || SHARED_BRANCH;
+  const url = 'https://raw.githubusercontent.com/'+SHARED_OWNER+'/'+SHARED_REPO+'/'+ref+'/'+path+
+              (sha ? '' : '?t='+Date.now());
+  const resp = await fetch(url, {headers:{'Range':'bytes=0-65535'}, cache:'no-store'});
+  if(resp.status === 404) return {state:'missing', stale:!sha};
+  /* resp.ok already covers 206, since it is true for the whole 200-299 range.
+     This originally carried an explicit "&& resp.status !== 206" guard, which a
+     deliberate-break test proved was dead code: removing it changed nothing.
+     Dropped rather than left in, because a redundant condition reads as though
+     partial responses need special handling here, and they do not. */
   if(!resp.ok) return {state:'error', detail:'HTTP '+resp.status};
   const text = await resp.text();
   const v = ghcExtractVersion(text);
-  return v ? {state:'ok', version:v, bytes:text.length}
-           : {state:'unversioned', bytes:text.length};
+  /* A ranged response carries only the first 64 KB, so its length says nothing
+     about the file. Only report bytes when the whole file actually arrived. */
+  const whole = resp.status === 200;
+  return v ? {state:'ok', version:v, bytes: whole ? text.length : null, sha:sha, stale:!sha}
+           : {state:'unversioned', bytes: whole ? text.length : null, stale:!sha};
 }
+/* What the last push in THIS session put where. The push knows what it just
+   wrote and at which commit, so after a push there is no reason to go and ask
+   a cache the same question. Same rule as everywhere else in this file: where
+   two paths must agree on a fact, one of them answers it. */
+const ghcPushedThisSession = Object.create(null);
 /* Compares two "4.1" style versions numerically. String compare would call
    v4.10 older than v4.9, which is wrong and would go unnoticed for months. */
 function ghcVersionCmp(a, b){
@@ -4616,6 +4677,14 @@ async function checkConsoleRepoFreshness(){
   try{ r = await ghcFetchRepoVersion('console/EDDB_Console.html'); }
   catch(e){ return; }
 
+  /* If the commit sha could not be resolved, this answer came off the CDN and
+     may be minutes old. Saying nothing is right: a banner claiming the repo is
+     behind when it was updated ninety seconds ago is worse than no banner,
+     because the second false alarm is the one that teaches you to ignore it.
+     The Credentials panel still shows the number, labelled as possibly cached,
+     for anyone who went looking on purpose. */
+  if(r.stale) return;
+
   let msg = null;
   if(r.state === 'ok' && ghcVersionCmp(r.version, mine) < 0){
     msg = 'eddb-shared is holding v'+r.version+'. You are running v'+mine+
@@ -4662,7 +4731,13 @@ async function pushRawTextFileToSharedRepo(path, text, commitMessage){
     contentText: text, commitMessage: commitMessage,
     tokenKey: 'sharedToken', tokenLabel: 'Shared Repo Push Token'
   }));
-  return {commitSha: putData && putData.commit && putData.commit.sha, size: text.length};
+  const commitSha = putData && putData.commit && putData.commit.sha;
+  /* Record what was just written so nothing has to re-read a CDN to find out.
+     The version comes from the bytes that were actually pushed, not from the
+     filename and not from this console's own #appVersion, because Push File to
+     Repo pushes any file, including the ISS console and handoff docs. */
+  ghcPushedThisSession[path] = {version: ghcExtractVersion(text), sha: commitSha, at: Date.now()};
+  return {commitSha: commitSha, size: text.length};
 }
 
 /* Auto-sync: any time a note is saved anywhere in the app (via
@@ -5776,17 +5851,97 @@ function wireCopyButtons(scopeEl){
    the stored value when the archive has moved ahead of it. Reserving
    behavior for unsaved drafts across tabs is preserved either way, since
    the stored counter still only advances on commitSharedRef. */
+/* 2026-08-21. Reported through the Memory Hole project: four REF collisions in
+   one week, 2356, 2396, then 2400 and 2391 in a single batch, each one a number
+   already carried by a live note somewhere else.
+
+   The cause was not a broken allocator. It was an allocator with no consumer.
+
+   The console already reserves blocks of REFs from the site: ssReserveRefBlock
+   calls reserve_ref_block, stores what comes back in siteSync.refBlock, shows a
+   REFs reserved count on the Site Sync panel, and warns when the block runs
+   low. All of that shipped and all of it works. ssTakeReservedRef, the function
+   that spends one, appeared exactly once in this file: its own definition.
+   Nothing ever called it. Every REF actually issued still came from the local
+   counter below, so the console reserved blocks and threw them away.
+
+   The database says the same thing in numbers: the sequence sits at 3016 while
+   the highest REF actually written is 2397. That 619 of headroom is not spare
+   capacity, it is the pile of blocks reserved and never spent, and meanwhile
+   the console kept issuing in the 2390s where the archive already had notes.
+
+   Fixed by connecting the two. When a reserved block is held it is the source
+   of truth; the local counter stays as the floor for when it is not.
+
+   Peek, not take. nextSharedRef is called to DISPLAY a number in many places
+   (every render of the REF field at the top of the app) and commitSharedRef is
+   what actually consumes it. Shifting the block here would burn a reserved REF
+   on every panel render. So this reads refBlock[0] without removing it, and
+   commitSharedRef removes it once it has genuinely been used. That matches the
+   peek/commit split every one of the 78 call sites already relies on.
+
+   Deliberately does NOT auto-reserve when the block runs dry. Reservation has
+   readiness guards for good reason (a machine with a stale archive reserving
+   would hand back numbers already in use, which nearly happened on 2026-08-13),
+   and silently firing a network call from inside a synchronous getter that runs
+   on every render is the wrong shape. It falls back to the local counter and
+   the Site Sync panel keeps warning, same as before. */
+/* Drops reserved REFs that sit at or below a number already issued. Those are
+   unusable, and without pruning them a single stale entry at the head of the
+   block would jam everything behind it forever: nextSharedRef would refuse it
+   on every call, nothing would ever consume it, and the rest of the block
+   would never be reached.
+
+   This matters for the state the console is actually in right now. Blocks have
+   been reserved since Site Sync shipped and never spent, so a long-held block
+   can begin well below where the archive has since reached. Pruning is only
+   ever discarding numbers that cannot safely be used, which is the opposite of
+   the failure being fixed. */
+function ssPruneReservedBelow(floor){
+  try{
+    const c = ssCfg();
+    if(!c.refBlock || !c.refBlock.length) return;
+    let dropped = 0;
+    while(c.refBlock.length && c.refBlock[0] < floor){ c.refBlock.shift(); dropped++; }
+    if(dropped) persist('siteSync');
+  }catch(e){}
+}
+function ssPeekReservedRef(){
+  try{
+    const c = ssCfg();
+    return (c.refBlock && c.refBlock.length) ? c.refBlock[0] : null;
+  }catch(e){ return null; }
+}
 function nextSharedRef(){
   const stored = parseInt(localStorage.getItem(LS.ref)||'1000',10);
   const archiveNext = parseInt(nextNoteRef(),10) || 0;
   const next = Math.max(stored, archiveNext);
   if(next !== stored) localStorage.setItem(LS.ref, String(next));
+  ssPruneReservedBelow(next);
+  const reserved = ssPeekReservedRef();
+  /* A reserved REF that is somehow BELOW what this machine has already issued
+     would be a collision waiting to happen, so the local floor still wins in
+     that case. It should not occur, since reserve_ref_block raises the
+     sequence past the reported local high before allocating, but a block held
+     from before an archive pull could be stale and this costs nothing. */
+  if(reserved !== null && reserved >= next) return reserved;
   return next;
 }
 function commitSharedRef(usedValue){
   const usedNum = parseInt(String(usedValue).replace(/[^0-9]/g,''),10);
   const baseline = isNaN(usedNum) ? nextSharedRef() : usedNum;
   localStorage.setItem(LS.ref, String(baseline+1));
+  /* Spend the reserved REF, but only if the number actually used is the one at
+     the head of the block. A caller that used something else (a hand-typed REF,
+     or a fallback issued while the block was empty) must not silently consume a
+     reservation it never touched. */
+  try{
+    const c = ssCfg();
+    if(c.refBlock && c.refBlock.length && c.refBlock[0] === usedNum){
+      c.refBlock.shift();
+      persist('siteSync');
+    }
+  }catch(e){}
 }
 function buildMemNote(fields){
   let lines=['---','REF: '+(fields.ref!==undefined ? fields.ref : ''), 'DATE: '+fmtLong(new Date())];
@@ -27668,10 +27823,24 @@ function initGithubCredentials(){
     const rows = [];
     for(const c of GHC_TRACKED_CONSOLES){
       let r;
-      try{ r = await ghcFetchRepoVersion(c.path); }
-      catch(e){ r = {state:'error', detail:'could not reach GitHub'}; }
+      const pushed = ghcPushedThisSession[c.path];
+      if(pushed && pushed.version){
+        /* Pushed from this console in this session. That is a stronger answer
+           than any read, and it is immune to the CDN lag that made this panel
+           report v4.1 straight after a successful v5.0 push. */
+        r = {state:'ok', version: pushed.version, bytes:null, sha: pushed.sha, justPushed:true};
+      }else{
+        try{ r = await ghcFetchRepoVersion(c.path); }
+        catch(e){ r = {state:'error', detail:'could not reach GitHub'}; }
+      }
       let txt, color = 'var(--sl)';
-      if(r.state === 'ok') txt = 'v'+r.version+'  ('+(r.bytes/1048576).toFixed(2)+' MB)';
+      if(r.state === 'ok'){
+        txt = 'v'+r.version
+            + (r.bytes ? '  ('+(r.bytes/1048576).toFixed(2)+' MB)' : '')
+            + (r.justPushed ? '  (pushed from here just now)' : '')
+            + (r.stale ? '  (could not confirm against a commit, this may be cached)' : '');
+        if(r.stale) color = 'var(--amb)';
+      }
       else if(r.state === 'missing'){ txt = 'not in the repo'; color = 'var(--amb)'; }
       else if(r.state === 'unversioned'){ txt = 'no version in the file, predates 20 Aug 2026'; color = 'var(--amb)'; }
       else { txt = r.detail || 'could not read'; color = 'var(--red)'; }

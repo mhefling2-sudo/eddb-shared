@@ -451,7 +451,7 @@ footer.appfoot #appVersion{flex:none;font-weight:700;letter-spacing:.03em;white-
 
        Bump the major and reset the minor on a new feature; bump the minor on a
        build that only fixes something. -->
-  <footer class="appfoot"><span class="footmsg">All data lives in this browser's local storage on this device. Course and file naming data syncs with GitHub. <span id="githubSyncStatus">Checking GitHub...</span> <span id="notesAutoSyncStatus" style="margin-left:10px;"></span></span><span id="appVersion" title="Console version">v3.0</span></footer>
+  <footer class="appfoot"><span class="footmsg">All data lives in this browser's local storage on this device. Course and file naming data syncs with GitHub. <span id="githubSyncStatus">Checking GitHub...</span> <span id="notesAutoSyncStatus" style="margin-left:10px;"></span></span><span id="appVersion" title="Console version">v4.1</span></footer>
   <div id="storageWarningBanner" style="display:none;background:var(--red);color:#fff;padding:8px 14px;font-size:11.5px;font-weight:700;flex-shrink:0;">
     <span id="storageWarningText"></span>
     <button id="storageWarningDismiss" style="margin-left:12px;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.5);color:#fff;border-radius:5px;padding:2px 8px;font-size:10px;font-weight:700;cursor:pointer;">Dismiss</button>
@@ -1173,6 +1173,7 @@ const LS = {
   issCheckIn:'eddb_console_isscheckin_v1',
   issCheckInItemTypes:'eddb_console_isscheckinitemtypes_v1',
   issCheckInMeetingStatuses:'eddb_console_isscheckinmeetingstatuses_v1',
+  issCheckInMaterialStatuses:'eddb_console_isscheckinmaterialstatuses_v1',
   travelOrders:'eddb_console_travelorders_v1',
   travelVouchers:'eddb_console_travelvouchers_v1',
   lastEndOfDayNote:'eddb_console_lasteodnote_v1',
@@ -2108,6 +2109,28 @@ const SESSION_STATUS_SEED = [
   {id:'ss_seed_20260820_cn', category:'shipped', text:'Version numbering added to the ISS console, on its own line starting at v1.0 rather than sharing the BC console\'s number, because the two ship independently and a shared number would imply a relationship that does not exist. Same treatment as the BC console: the number lives in the footer markup and nowhere else, appVersion reads it back out of the DOM rather than a second constant holding a copy, and it stays visible when the script has died. Giving both files identical markup for it is what lets one extractor read either of them, which is what the repo panel below depends on.', status:null, includedInHandoff:false, logged:'2026-08-20'},
   {id:'ss_seed_20260820_co', category:'shipped', text:'New panel on Branch Admin > GitHub Credentials, Consoles on eddb-shared, reporting what version of each console is actually sitting in the repo. Per Mike, the number has to come from inside the file rather than from its name, because he renames the file after downloading it, so the name is a label he chose and proves nothing. The number in the markup was written by whoever built the file and is the only trustworthy statement of what it is. Reads the raw file unauthenticated, since eddb-shared is public, so it works before the push token has been entered, which is the state someone is most likely to be in when they want to know what is already up there. Deliberately not the GitHub contents API, which caps near 1 MB and would return a placeholder for a 2 MB console rather than the file. The panel also states what the running console is, because the comparison is the whole point: it answers whether what you are running is newer than what is up there without reading two numbers off two screens.', status:null, includedInHandoff:false, logged:'2026-08-20'},
   {id:'ss_seed_20260820_cp', category:'shipped', text:'The file picker now reports the version of the file selected for push, read from its bytes before upload. This closes the actual hazard, which is pushing an older build over a newer one and not finding out until someone downloads it. With the repo panel above it, both numbers are on screen at the same moment, so overwriting a newer file becomes a visible choice rather than an accident. Verified with intercepted responses rather than against whatever happens to be on GitHub, covering all four states: both consoles versioned, a repo copy that predates versioning, a console absent from the repo, and a version read correctly out of content whose filename says something different. Also asserted the credentials panel\'s own missing-element guard stays clean after three new ids were added to it, since that guard fails loudly by design and would have caught a mismatch.', status:null, includedInHandoff:false, logged:'2026-08-20'},
+  {id:'ss_seed_20260821_a', category:'shipped', text:'Fixed the course assignment data loss Mike reported as changes being erased and the list resetting to an outdated set of assignments. Traced end to end rather than guessed, and it is a four-step loop, not a single bad line. DEFAULT_COURSES is a 187-course array hardcoded in the file and frozen at whatever the assignments were when that build was cut; the 3.0 build still carried 34 stale rows, 32 of them Vacant 1 or Vacant 2. loadJSON returns that seed when localStorage has no courses key AND writes the seed into localStorage on its way out, so one tick after boot nothing distinguishes placeholder from real data. pullAllSharedData then merged local-wins via mergeCoursesByNum, which is the correct policy for real user data and exactly the wrong one for a seed, so the frozen seed beat the good courses.json for all 186 shared courses. Finally courses is in PUBLIC_SYNC_KEYS and auto-pushes on a 3s debounce, so the next course edit shipped the reverted array back to the repo and every other copy picked it up. Compared the live repo against the seed to size it: courses.json currently holds 2 vacancies, the seed holds 34, and the 34 differing course numbers were listed to Mike explicitly rather than described in the aggregate.', status:null, includedInHandoff:false, logged:'2026-08-21'},
+  {id:'ss_seed_20260821_b', category:'shipped', text:'The course assignment fix is provenance plus two independent guards, not just a swapped merge order. coursesLookLikeSeed() runs before STATE is built, because loadJSON is the thing that destroys the evidence, and it answers seed-or-real two ways: no localStorage key at all, or a stored copy that compares field by field equal to DEFAULT_COURSES. The second case is what repairs a console already in the broken state, since the bad merge wrote the seed back to localStorage and without that check the fix would stop the bleeding but never heal the machine already bleeding. Comparison is field by field on num/title/iss/ts/proponent/cop/type with a sorted key, so key order or whitespace from a JSON round trip cannot defeat it. Merge precedence then depends on provenance: seed loses to the repo, real user data still wins, which leaves the 2026-07-31 local-wins behaviour intact for everything that is genuinely edited. Course numbers present on only one side are folded in either way, verified against 603 which exists in the seed and not in courses.json.', status:null, includedInHandoff:false, logged:'2026-08-21'},
+  {id:'ss_seed_20260821_c', category:'shipped', text:'Second guard on the same bug: coursesReconciled blocks every push of the course list until a remote copy has actually been merged in. Without it the fix would still lose the data on any load where GitHub was unreachable, which is precisely the condition under which someone keeps working offline and edits a course. Both the 3s auto-push in runPublicRepoSyncOnce and the manual Push button on Course Data are gated, because a deliberate button click is not evidence that the data behind it is real, and that button is the one control that can overwrite the only good copy of the assignments. The blocked case records a sync failure with a plain-language reason rather than returning quietly, so the status bar says the backup did not happen instead of implying it did.', status:null, includedInHandoff:false, logged:'2026-08-21'},
+  {id:'ss_seed_20260821_d', category:'shipped', text:'Verified the course provenance fix by execution, 27 assertions, all against code extracted from the shipped file and run, none asserting on the presence of a string in the source. The real courses.json from the repo is used as the remote fixture rather than a hand-written stub. Covered: a fresh browser takes the repo assignments and vacancies fall from 34 to 2 plus seed-only 603; a console already holding the seed in localStorage repairs itself and all 34 named reversions come back correct; a real local edit still beats a stale repo, so the 2026-07-31 fix is not regressed; a single one-field edit to the seed disqualifies the seed test, so real work is never mistaken for a placeholder; seed-only course numbers survive; and the push guard is proven by stubbing pushToGitHub and confirming it is never reached while unreconciled, since source-matching the if() would not prove the return actually prevents the call. Two assertions failed on the first run and both were wrong assertions rather than wrong code: they did not account for course 603 being seed-only and carrying its own Vacant 2. Corrected to assert the exact expected number rather than loosened.', status:null, includedInHandoff:false, logged:'2026-08-21'},
+  {id:'ss_seed_20260821_e', category:'openquestion', text:'Course 603 Operational Cond Assess DL exists in DEFAULT_COURSES but not in courses.json on the repo. It survives the merge, which is the safe direction, but it is worth Mike confirming whether it is a real course that was never pushed or a row that was deliberately removed. If removed, it will keep coming back until the course list gets tombstone wiring like the training keys already have.', status:'Open', includedInHandoff:false, logged:'2026-08-21'},
+  {id:'ss_seed_20260821_f', category:'openquestion', text:'The underlying pattern is not specific to courses. Any STATE key that ships a hardcoded DEFAULT_ seed AND participates in a local-wins merge has the same exposure: the placeholder is written to localStorage by loadJSON on first read and is then indistinguishable from real data. courses was the one reported because its seed carries 34 stale assignments and it auto-pushes to a shared repo, which makes the damage travel. DEFAULT_PEOPLE, DEFAULT_TAGS and DEFAULT_PURPOSE were not audited in this pass. Needs a systematic sweep of every DEFAULT_ constant against its merge policy, in the same category as the two standing sweeps already logged on 2026-08-02 for id-less arrays and tombstone coverage.', status:'Open', includedInHandoff:false, logged:'2026-08-21'},
+  {id:'ss_seed_20260821_g', category:'shipped', text:'ISS Check-In summary email no longer runs every discussed item into one semicolon-separated sentence. Reported by Mike with a real example next to the output he wanted: fourteen updated items had been joined with \'; \' into a single paragraph, and he could not fix it from Data > Templates because no token existed that could express a line break per item. New *Block tokens render an editable lead-in followed by one dash bullet per item. The old *Sentence tokens are kept and still produced, so a template anyone has already customised keeps working; the shipped default simply stops using them. Verified against Mike\'s actual 14 August check-in with Taneya: fourteen items, fourteen bullets.', status:null, includedInHandoff:false, logged:'2026-08-21'},
+  {id:'ss_seed_20260821_h', category:'decision', text:'Lead-ins are named template parts rather than literal text inside emailBody, and the check-in form echoes each one back as helper text above the section it feeds. This is the answer to the harder half of what Mike reported, that the notes are captured as data intake while the email is spoken to the ISS, so the output kept coming out in the wrong voice: her teams, Taneya did request extension. Deliberately did NOT attempt to convert voice in code. Turning third person into second means pronoun rewriting on free text, which will be wrong often enough to poison trust in the whole email, and Mike\'s own preferred draft mixes voice anyway (Crs 205 rewritten to you are currently working, Crs 056 left as Taneya did request extension), which is evidence for helper text over automation rather than against it. The hint reads the live template part through the same ciLeadIn function the email uses, so rewording a lead-in changes both and the help can never start describing output it no longer produces.', status:null, includedInHandoff:false, logged:'2026-08-21'},
+  {id:'ss_seed_20260821_i', category:'shipped', text:'Three more things Mike flagged in the same email. Flowers were being appended to the We also discussed and captured sentence alongside concerns and tasks, which reads as admin rather than recognition; they now get their own block and lead-in, with the type prefix dropped per line since the lead-in already says what they are. A BC due-out was printing twice, once as Still due out and again as I owe you, same item, same REF; removed from the due-out list rather than from the owe line, because Still due out is what the ISS owes me and a BC due-out is what I owe them, so mixing them under one heading was wrong independently of the duplication. Stated tradeoff: the suspense date no longer reaches the email for a BC due-out, since only the due-out list carried dates; the REF note still holds it. Trailing dashes, stray whitespace and a trailing separator are trimmed from every item, and a trailing Requested is dropped from Training/Resources rows only, since that is the one list sitting under a lead-in that already says the word.', status:null, includedInHandoff:false, logged:'2026-08-21'},
+  {id:'ss_seed_20260821_j', category:'shipped', text:'The check-in summary body is the one template part that had to be REPLACED rather than backfilled, because mergeTemplateRegistryDefaults deliberately never overwrites an existing part and emailBody exists in every stored registry. Left alone it would have kept rendering the old run-on tokens forever and the whole change would have been invisible. Same provenance question as the course seed earlier today, answered the same way: replace it only when what is stored is byte-identical to the previously shipped default, meaning nobody edited it. Any customisation, even one character, is left completely alone. Whitespace and line endings are normalised before comparing so a round trip through the editor textarea does not make an untouched default look edited.', status:null, includedInHandoff:false, logged:'2026-08-21'},
+  {id:'ss_seed_20260821_k', category:'shipped', text:'Four ISS Check-In dropdowns are now select-or-type-new. Mike named them from the Fixed Dropdowns list, and checking each one first changed what the work actually was rather than confirming it. Open Notes item type and Meeting status were already backed by reusable banks but rendered as a plain select, so the bank could only be edited from Data > Dropdowns and never from the row in front of you. Course Material and Development status were genuinely fixed, both reading the ciMaterialStatus registry entry; a new issCheckInMaterialStatuses bank replaces it, registered in all four required places and seeded from the old registry defaults, with a migration folding in anything Mike had added there himself. All four go through one helper so the read path and the add-new path cannot drift apart. Ids come from a counter rather than a hash of the row key, because a hash can collide and a duplicate id here means two rows silently sharing one dropdown, which is the exact failure this project already has a standing rule about.', status:null, includedInHandoff:false, logged:'2026-08-21'},
+  {id:'ss_seed_20260821_l', category:'decision', text:'Two of the four dropdowns Mike named were not built as asked, with reasons. meetingType is a ghost: it was migrated off the registry onto meetingTypeBank on 2026-08-17 and the old entry was deliberately left in place so historical notes still resolve, but it still shows in the Fixed Dropdowns list carrying a placeholder option, which is why it looked fixed. Nothing to unfix; the question is whether the list should hide migrated entries, which is a separate change and Mike\'s call. optionalYesFlag was left fixed on purpose: its only option is Yes and its blank value is load-bearing, because the note builder omits the line entirely when the field is falsy. Free text there would let a typed value silently produce a wrong note line, and a Yes/blank flag is a boolean wearing a dropdown, not a list wanting new entries.', status:null, includedInHandoff:false, logged:'2026-08-21'},
+  {id:'ss_seed_20260821_m', category:'shipped', text:'Verified this build by execution, 68 new assertions across three suites plus the standing regression file, all against code extracted from the shipped file and run, none asserting on the presence of a string in the source. The email suite drives the real issCheckInBuildEmail against the real shipped template using Mike\'s actual 14 August Taneya check-in as the fixture and compares the produced text to the format he asked for, including the empty-section case where every block must vanish without leaving a dangling heading or an orphan bullet. Three assertions failed on first run and all three were wrong assertions rather than wrong code: one counted Flowers bullets as updated bullets, one did not pass a constant into the harness, and one had the trim order backwards, since the captured text ends Requested- and the dash has to come off before the word is visible at the end of the string. Each was corrected to assert the exact expected value rather than loosened.', status:null, includedInHandoff:false, logged:'2026-08-21'},
+  {id:'ss_seed_20260821_n', category:'openquestion', text:'The standing regression file in eddb-shared/tests fails one of six suites against the PRISTINE v3.0 pulled from the repo, before any change made today: Calendar throws calUpdateCheckInLog is not defined. The function does exist in the console, so the suite is extracting a caller without its callee, or the extraction anchor has drifted as the file grew. Either way that suite has not actually been testing anything for some time. Not chased today because it is unrelated to the reported work, but it is exactly the failure mode the project already warns about, a source-extracting test quietly starting to test something else.', status:'Open', includedInHandoff:false, logged:'2026-08-21'},
+  {id:'ss_seed_20260821_o', category:'nextstep', text:'Still open from Mike\'s batch, none started: the seven failed QA evals not appearing on an ISS check-in, the closeout email carrying the previous check-in\'s items rather than today\'s, the date at the top defaulting to the current day, a first section recapping what is still open from the last discussion with a progress prompt, tasked-date pills showing when and how long ago, listing any item only once across sections, and click-to-expand showing the related REF note. The first three look like one root cause, the check-in reading a saved snapshot rather than live data, and should be traced together before any of them is fixed individually.', status:'Open', includedInHandoff:false, logged:'2026-08-21'},
+  {id:'ss_seed_20260821_p', category:'shipped', text:'Ran the deliberate-break step of the ship routine properly rather than assuming, and it caught two suites that were decoration. Reverting the course merge precedence and the email block rendering both failed loudly, as they should. But hardcoding COURSES_WERE_SEEDED to false left all 27 course assertions green, because the harness rebuilt that line itself instead of extracting it, so the suite was proving its own copy correct rather than the shipped one. And reverting the BC due-out dedupe left all 37 email assertions green, because the suite built the dueOuts array by hand and fed it to the email builder, while the dedupe actually lives in issCheckInCloseoutMeeting, which the suite never executed. Both fixed by extracting and running the real code: the flag assignment is now sliced out of the file, and the real section 7 is executed against a stubbed note writer. Eight deliberate breaks are now caught, including the subtle ones. Worth stating as a general rule for this project: a test that reconstructs the line under test rather than extracting it will pass whatever the file says, and a fix that lives in a different function from the one the suite calls is not covered no matter how many assertions surround it.', status:null, includedInHandoff:false, logged:'2026-08-21'},
+  {id:'ss_seed_20260821_q', category:'shipped', text:'Fixed the Leave calendar entry Mike reported as coming out "Brenda, Brenda, 1.5 hrs, {{code}}" instead of "Lawson, Brenda, 1.5 hrs, LS". Two independent faults. First, refreshLvCalDeliv looked up the Key Roster on an exact preferredName match only, and when it missed it substituted issVal, the FIRST name, into the last name slot. That produces a line that looks finished and is wrong, which is the worst possible failure for text pasted into a shared calendar, and it was the only unresolved value in that builder that did not degrade to a visible placeholder the way [Hours], [Location] and [Leave type] already did. The lookup is now one shared function trying exact preferredName, then case-insensitive, then firstName, then the first word of a full name field, and an unresolved last name renders [Last name] so the Key Roster gap is visible rather than papered over with the wrong name.', status:null, includedInHandoff:false, logged:'2026-08-21'},
+  {id:'ss_seed_20260821_r', category:'decision', text:'The second half of the Leave entry report was {{code}} printing as literal text. Checked the history before assuming: the shipped default went {{leaveType}} to {{leaveTypeCode}} on 2026-08-20 and was never {{code}}, so this was Mike editing the template and guessing the token name. tplSubstitute only replaces names it is handed and leaves everything else exactly as written, so a wrong guess produced silence. Deliberately did NOT fix this by aliasing likely guesses to real tokens: that fixes one guess and leaves the next one just as silent, and it hides the fact that the template is wrong. The Templates editor now detects any token used in a part that the template cannot supply, prints it in red above the fields, names the part it is in, and suggests the nearest real token, so {{code}} reads "did you mean {{leaveTypeCode}}?". It re-renders on edit, because a warning that only appears on a fresh visit to the tab would be missed by exactly the edit that caused it. Root cause of the guess also addressed: leaveTypeCode had no glossary entry at all, so the editor showed it as "(no description yet)" next to a name that does not obviously mean the two-letter code. A token nobody can identify from its name is a token people will guess at.', status:null, includedInHandoff:false, logged:'2026-08-21'},
+  {id:'ss_seed_20260821_s', category:'shipped', text:'The new unknown-token check immediately earned its place by finding a second, unreported defect while being tested against all 28 shipped templates: fundingMeeting used {{people}} and {{personLinesSemi}} in memBody but declared neither in its tokens list. The template worked, because both are supplied at the call site, but the editor\'s token list was incomplete, so anyone editing that memo could not see two of the tokens it already uses. That is the same root cause as the {{code}} guess, an incomplete list of what is available teaching people to guess, and it would have made the new warning misfire on a working template. Both declared. All 28 templates now check clean, and that sweep is a standing assertion rather than a one-off, so a future template that references a token it cannot supply fails the suite instead of shipping.', status:null, includedInHandoff:false, logged:'2026-08-21'},
+  {id:'ss_seed_20260821_t', category:'decision', text:'Stacey English and Elizabeth Dale confirmed by Mike as real, the last two people in LAB, the Leadership Academy Branch, which is being phased out. Elizabeth had no role_id at all, which made her invisible to every chief on the site including Mike; she now carries the same EDDB ISS role Stacey already had, so the two are consistent and both resolve to the EDDB chief. Deliberately did NOT create a LAB branch. A branch that is closing would need creating, populating and then deleting, and the moment it existed both people would scope to it and disappear from Mike\'s view on the site, which is a regression caused by tidiness. The free-text branch field still reads LAB on both records, so the association is not lost. If LAB outlives its phase-out or ever needs its own chief, it becomes a real branch then.', status:null, includedInHandoff:false, logged:'2026-08-21'},
+  {id:'ss_seed_20260821_u', category:'decision', text:'api.github.com is reachable from the build sandbox after all. The 2026-08-19 finding that it was blocked by the egress allowlist, recorded as a lesson about running an unauthenticated baseline before concluding a credential is dead, does not reproduce today: an unauthenticated request returns 200 and git ls-remote against the repo succeeds. Either the allowlist changed or the original diagnosis conflated an authenticated 403 with an unreachable host. Worth correcting in the record rather than leaving a false constraint in place, because it is the kind of note that quietly rules out an option months later. It also means pushing a shipped console straight to eddb-shared from the build session is technically possible, given a token, which is what Mike asked about.', status:null, includedInHandoff:false, logged:'2026-08-21'},
+  {id:'ss_seed_20260821_v', category:'openquestion', text:'Whether the build session should push each shipped console to eddb-shared automatically. Mike asked for it, and it would have prevented today\'s rebuild, where the repo held v3.0 while he was running v3.1 and the 3.1 log entries had to be reconstructed. It needs a token in the session, which means the credential lives in the conversation transcript. Recommended shape if it goes ahead: a fine-grained PAT scoped to contents write on eddb-shared alone, nothing else, separate from the existing console-push-eddb-shared token so it can be revoked without breaking the console\'s own push button. Mike\'s call, and worth noting the alternative is free: pushing from the console after each build closes the same gap with no new credential anywhere.', status:'Open', includedInHandoff:false, logged:'2026-08-21'},
 ];
 function mergeSessionStatusSeed(){
   const localIds = new Set(STATE.sessionStatus.map(r=>r.id));
@@ -2540,7 +2563,15 @@ const TPL_TOKEN_DEFS = {
   memNoteParts: 'The Memory Hole NOTE summary of who was approved and at what amount, computed automatically.',
   preferredName: 'The preferred name entered for this Key Roster entry.',
   firstName: 'The first name entered for this Key Roster entry.',
-  lastName: 'The last name entered for this Key Roster entry.',
+  lastName: 'The last name entered for this Key Roster entry. Shows [Last name] if the Key Roster has no last name for this person.',
+  /* Added 2026-08-21. leaveTypeCode had no definition, so the editor showed it
+     as "(no description yet)" next to a name that does not obviously mean the
+     two-letter code. Mike guessed {{code}} and got the literal text in his
+     calendar line. A token nobody can identify from its name is a token people
+     will guess at. */
+  leaveType: 'The leave reason spelled out, e.g. Sick Leave.',
+  leaveTypeCode: 'The abbreviated leave code, e.g. LS for Sick Leave, LA for Annual Leave. This is the one the calendar line uses.',
+  hours: 'The number of hours entered, without the word hrs.',
   organization: 'The organization entered, defaults to ULC if left blank.',
   role: 'The role entered for this person.',
   relation: 'How this person relates to EDDB.',
@@ -2645,7 +2676,14 @@ const DEFAULT_TEMPLATE_REGISTRY = {
   fundingMeeting: {
     label: 'Funding Request \u2014 Instructor Meeting',
     mainTabKey: 'budget', childTabKey: '',
-    tokens: ['num','title','startFmt','endFmt','personLines','ref','date','total'],
+    /* people and personLinesSemi were supplied at the call site but never
+       declared here, found 2026-08-21 by the new unknown-token check. The
+       template worked, but the editor's token list was incomplete, so anyone
+       editing memBody could not see two of the tokens it already uses. That
+       incomplete list is the same reason Mike guessed {{code}} on the Leave
+       entry: the documentation of what is available has to be complete or it
+       teaches people to guess. */
+    tokens: ['num','title','startFmt','endFmt','personLines','personLinesSemi','people','ref','date','total'],
     emailBody: 'To: Budget Team\n\nBudget Team,\n\nPlease see the funding request for Course #{{num}}, {{title}} instructor meeting, {{startFmt}} through {{endFmt}}.\n\n{{personLines}}\n\nThank you,',
     memBody: '---\nREF: {{ref}}\nDATE: {{date}}\nPURPOSE: Funding update\nPEOPLE: {{people}}, Budget Team\nCOURSE: {{num}}\nCOURSE DETAIL: {{num}} - {{title}}\nTAGS: Meeting, Funding Request, Budget\nNOTE: Funding request reviewed for instructor meeting {{startFmt}} through {{endFmt}}. {{personLinesSemi}}.\nFOLLOW-UP: Memory only\nIMPORTANCE: High\nURGENCY: High\nBUDGET: ${{total}}\n---'
   },
@@ -2766,9 +2804,28 @@ const DEFAULT_TEMPLATE_REGISTRY = {
   issCheckInSummary: {
     label: 'ISS Check-In \u2014 Summary Email',
     mainTabKey: 'personnel', childTabKey: 'isscheckin',
-    tokens: ['iss','dateStr','ref','dueOutsSentence','updatedSentence','capturedSentence','requestedSentence','oweSentence','nextCheckInDate','nextCheckInTime'],
+    /* 2026-08-21, reported by Mike: the email ran every discussed item into one
+       semicolon-separated sentence, and he could not find a way to give each
+       item its own line from Data > Templates, because there was no way to
+       express it. The *Block tokens below render a lead-in followed by one
+       dash bullet per item. The *Sentence tokens are kept and still work, so
+       a template someone has already customised does not break; they are just
+       no longer what the shipped default uses.
+
+       Each lead-in is its own editable part rather than literal text inside
+       emailBody. That is deliberate: the check-in form shows the lead-in as
+       helper text above the box you type into, so you can match the wording
+       and the tense, and helper text and email have to read the same string
+       or the help is a lie. One part, two readers. */
+    tokens: ['iss','dateStr','ref','dueOutsBlock','updatedBlock','flowersBlock','capturedBlock','requestedSentence','oweSentence','nextCheckInDate','nextCheckInTime','dueOutsSentence','updatedSentence','capturedSentence'],
     emailSubject: 'Notes and Due outs from our weekly check in on {{dateStr}} , REF: {{ref}}',
-    emailBody: '{{iss}},\n\nThank you for meeting with me today. We discussed the remaining QA Evaluation tasks, upcoming meetings, and course curriculum still needing to be uploaded to STAGE.\n{{dueOutsSentence}}{{updatedSentence}}{{capturedSentence}}\n{{requestedSentence}}{{oweSentence}}Please let me know if you have any questions or need any assistance. I look forward to our next check in on {{nextCheckInDate}} at {{nextCheckInTime}}\n'
+    updatedLeadIn: 'We also updated;',
+    flowersLeadIn: 'I also want to give you your Flowers for:',
+    capturedLeadIn: 'We also discussed and captured;',
+    dueOutsLeadIn: 'Still due out;',
+    requestedLeadIn: 'You requested',
+    oweLeadIn: 'I owe you',
+    emailBody: '{{iss}},\n\nThank you for meeting with me today. We discussed the remaining QA Evaluation tasks, upcoming meetings, and course curriculum still needing to be uploaded to STAGE.\n{{updatedBlock}}{{flowersBlock}}{{capturedBlock}}{{dueOutsBlock}}{{requestedSentence}}{{oweSentence}}Please let me know if you have any questions or need any assistance. I look forward to our next check in on {{nextCheckInDate}} at {{nextCheckInTime}}.\n'
   },
   leaveCalEntry: {
     label: 'TDY/Leave \u2014 Leave Calendar Entry',
@@ -2831,6 +2888,30 @@ function mergeTemplateRegistryDefaults(){
   });
   if(changed) persist('templateRegistry');
 }
+
+/* The check-in summary body is the one part that has to be REPLACED rather
+   than backfilled, because it already exists in every stored registry and
+   mergeTemplateRegistryDefaults deliberately never overwrites. Left alone it
+   would keep rendering the old run-on {{...Sentence}} tokens forever and the
+   one-line-per-item work would be invisible.
+
+   Same provenance question as the course seed, answered the same way: replace
+   it only when what is stored is byte-identical to the previously shipped
+   default, which means nobody has edited it. Any customisation, even a single
+   changed character, is left completely alone, and the legacy tokens keep
+   working so it does not break. Whitespace is normalised before comparing so a
+   round trip through the editor's textarea does not make an untouched default
+   look edited. */
+const CI_SUMMARY_BODY_PRE_20260821 = '{{iss}},\n\nThank you for meeting with me today. We discussed the remaining QA Evaluation tasks, upcoming meetings, and course curriculum still needing to be uploaded to STAGE.\n{{dueOutsSentence}}{{updatedSentence}}{{capturedSentence}}\n{{requestedSentence}}{{oweSentence}}Please let me know if you have any questions or need any assistance. I look forward to our next check in on {{nextCheckInDate}} at {{nextCheckInTime}}\n';
+function migrateCheckInSummaryBody(){
+  const tpl = STATE.templateRegistry.issCheckInSummary;
+  if(!tpl || typeof tpl.emailBody !== 'string') return;
+  const norm = t => String(t).replace(/\r\n/g, '\n').replace(/[ \t]+\n/g, '\n').trim();
+  if(norm(tpl.emailBody) !== norm(CI_SUMMARY_BODY_PRE_20260821)) return;  // customised, hands off
+  tpl.emailBody = DEFAULT_TEMPLATE_REGISTRY.issCheckInSummary.emailBody;
+  persist('templateRegistry');
+}
+
 /* Friendly labels for editor display. Anything not listed here just shows
    its raw key name, good enough as a fallback, but worth adding a real
    label whenever a new named part shows up more than once. */
@@ -2842,9 +2923,135 @@ const TPL_PART_LABELS = {
   emailPerOutgoingIss: 'Email \u2014 Per Outgoing ISS (repeats once per name)',
   emailClosing: 'Email \u2014 Closing',
   calEntryBody: 'Calendar Entry',
-  emailSubject: 'Email \u2014 Subject Line'
+  emailSubject: 'Email \u2014 Subject Line',
+  /* Lead-ins, 2026-08-21. These are the lines the check-in form echoes back as
+     helper text above each box, so the wording here is what Mike is writing to
+     match. Labelled explicitly rather than falling back to the raw key. */
+  updatedLeadIn: 'Lead-in \u2014 Items Updated',
+  flowersLeadIn: 'Lead-in \u2014 Flowers',
+  capturedLeadIn: 'Lead-in \u2014 Other Items Captured',
+  dueOutsLeadIn: 'Lead-in \u2014 Still Due Out',
+  requestedLeadIn: 'Lead-in \u2014 Training/Resources Requested',
+  oweLeadIn: 'Lead-in \u2014 BC Due-Outs (what I owe them)'
 };
 function tplPartLabel(key){ return TPL_PART_LABELS[key] || key; }
+
+/* 2026-08-21, found from a real failure. Mike edited the Leave calendar entry
+   and typed {{code}}, a reasonable guess at the token name. The real one is
+   {{leaveTypeCode}}. tplSubstitute only replaces names it was handed, and
+   leaves anything else exactly as written, so the calendar line came out
+   carrying the literal text {{code}} with nothing anywhere saying why.
+
+   The editor already lists every valid token with a description, so the
+   information was on screen. It was passive, and a wrong guess produced
+   silence. This makes the wrong guess say so. Deliberately NOT solved by
+   aliasing likely guesses to real tokens: that fixes one guess and leaves the
+   next one just as silent, and it hides the fact that the template is wrong.
+
+   Nearest-match is a plain prefix/containment check rather than an edit
+   distance, because the realistic mistakes here are abbreviations of the real
+   name (code for leaveTypeCode, ref for refNumber) rather than typos. */
+function tplTokensUsed(text){
+  const out = [];
+  String(text == null ? '' : text).replace(/\{\{([A-Za-z0-9_]+)\}\}/g, (m, name)=>{
+    if(out.indexOf(name) < 0) out.push(name);
+    return m;
+  });
+  return out;
+}
+function tplNearestToken(unknown, valid){
+  const u = String(unknown).toLowerCase();
+  return valid.find(v=>v.toLowerCase() === u)
+      || valid.find(v=>v.toLowerCase().endsWith(u))
+      || valid.find(v=>v.toLowerCase().startsWith(u))
+      || valid.find(v=>v.toLowerCase().includes(u))
+      || null;
+}
+/* Returns [{part, token, suggestion}] for every token used in a template that
+   the template does not actually supply. */
+function tplUnknownTokens(t){
+  const valid = t.tokens || [];
+  const metaKeys = ['label','mainTabKey','childTabKey','tokens'];
+  const found = [];
+  Object.keys(t).filter(k=>!metaKeys.includes(k)).forEach(part=>{
+    tplTokensUsed(t[part]).forEach(name=>{
+      if(valid.indexOf(name) >= 0) return;
+      found.push({part: part, token: name, suggestion: tplNearestToken(name, valid)});
+    });
+  });
+  return found;
+}
+
+/* ------------------------------------------------------------------
+   COURSE ASSIGNMENT PROVENANCE, added 2026-08-21.
+
+   Reported by Mike: course assignments he had made were being erased and
+   the list reset to an outdated set, with courses showing Vacant 1 and
+   Vacant 2 again.
+
+   Root cause, traced end to end rather than guessed:
+
+     1. DEFAULT_COURSES is a 187-course list hardcoded in this file, frozen
+        at whatever the assignments were when that build was cut. The 3.0
+        build still carries 34 stale rows, 32 of them Vacant.
+     2. loadJSON returns that seed when localStorage has no courses key AND
+        writes the seed into localStorage on its way out. One tick after
+        boot nothing distinguishes placeholder from real data, so the
+        question "is this Mike's data or the shipped seed" cannot be
+        answered any more.
+     3. pullAllSharedData merged local-wins (mergeCoursesByNum). That is the
+        right policy for real user data and exactly the wrong one for a
+        seed, so the frozen seed beat the good courses.json for every course
+        present in both.
+     4. courses is in PUBLIC_SYNC_KEYS and auto-pushes on a 3s debounce, so
+        the next course edit shipped the reverted array back to the repo and
+        every other copy picked it up.
+
+   The seed is a first-run placeholder, not data. It must never win a merge
+   against the repo and must never be pushed. Capturing provenance has to
+   happen BEFORE loadJSON runs, because loadJSON is what destroys the
+   evidence.
+
+   coursesReconciled is deliberately a second, separate guard: if the pull
+   fails (offline, missing token, 403) the seed is still sitting in STATE,
+   so the push stays blocked until a real remote copy has actually been
+   merged in. Without it the fix would still lose the data on any load where
+   GitHub was unreachable, which is the exact condition under which someone
+   keeps working locally and edits a course. */
+function coursesLookLikeSeed(){
+  /* Two ways the local copy can still be the placeholder:
+
+     a) localStorage has no courses key at all, a genuinely fresh browser
+        or a console file opened from a path that does not share an origin
+        with the previous one.
+     b) localStorage HAS the key but its contents are the seed, because a
+        previous build already ran the broken local-wins merge and wrote the
+        seed back out. That is the state Mike's console is actually in: the
+        bad merge returns the seed for every shared course, so what got
+        saved is the seed again.
+
+     (b) matters because without it this fix would stop the bleeding but
+     never repair the machine that is already bleeding. Comparing against
+     DEFAULT_COURSES field by field rather than by raw string, so key order
+     or whitespace from a round trip through JSON does not defeat it. If the
+     stored copy is indistinguishable from the shipped placeholder then it
+     IS the placeholder, wherever it happens to be sitting, and letting the
+     repo win costs nothing because there is no local edit to lose. */
+  let stored;
+  try{
+    const raw = localStorage.getItem(LS.courses);
+    if(raw === null) return true;
+    stored = JSON.parse(raw);
+  }catch(e){ return false; }
+  if(!Array.isArray(stored) || stored.length !== DEFAULT_COURSES.length) return false;
+  const fields = ['num','title','iss','ts','proponent','cop','type'];
+  const key = c => fields.map(f => String(c && c[f] != null ? c[f] : '')).join('\u0001');
+  const seedKeys = DEFAULT_COURSES.map(key).sort();
+  const storedKeys = stored.map(key).sort();
+  return seedKeys.every((k, i) => k === storedKeys[i]);
+}
+const COURSES_WERE_SEEDED = coursesLookLikeSeed();
+let coursesReconciled = !COURSES_WERE_SEEDED;
 
 const STATE = {
   courses: loadJSON(LS.courses, DEFAULT_COURSES),
@@ -2911,6 +3118,13 @@ const STATE = {
      those. See migrateRemoveTaskItemType for existing installs. */
   issCheckInItemTypes: loadJSON(LS.issCheckInItemTypes, ['Concern','Flowers']),
   issCheckInMeetingStatuses: loadJSON(LS.issCheckInMeetingStatuses, ['On Track','Delayed','Needs Funding','Complete']),
+  /* 2026-08-21, requested by Mike: Course Material status on ISS Check-In was a
+     Fixed Dropdown Registry entry, so adding a value meant a trip to
+     Data > Dropdowns > Fixed Dropdowns. Now a reusable bank you can type into
+     inline, same treatment Meeting Type got on 2026-08-17. Seeded from the old
+     registry defaults so nothing already in use disappears; the migration below
+     folds in anything Mike had added there himself. */
+  issCheckInMaterialStatuses: loadJSON(LS.issCheckInMaterialStatuses, ['On Track','At Risk','Blocked','Complete']),
   travelOrders: loadJSON(LS.travelOrders, []),
   travelVouchers: loadJSON(LS.travelVouchers, []),
   trainingLog: loadJSON(LS.trainingLog, []),
@@ -2961,7 +3175,7 @@ const STATE = {
 };
 
 function persist(key){
-  const map = {courses:LS.courses, people:LS.people, tags:LS.tags, purpose:LS.purpose, tasks:LS.tasks, stageNotes:LS.stageNotes, issExtra:LS.issExtra, courseExtra:LS.courseExtra, taIssues:LS.taIssues, taSteps:LS.taSteps, taIssueMap:LS.taIssueMap, sessions:LS.sessions, imHistory:LS.imHistory, nameAliases:LS.nameAliases, issLastNames:LS.issLastNames, leaveLocations:LS.leaveLocations, fileNameTypes:LS.fileNameTypes, usefulUrls:LS.usefulUrls, seenRequestIds:LS.seenRequestIds, requestRefMap:LS.requestRefMap, notesArchiveCache:LS.notesArchiveCache, dailyAgendaItems:LS.dailyAgendaItems, dailyAgendaHeader:LS.dailyAgendaHeader, lastEndOfDayNote:LS.lastEndOfDayNote, f4713FlagNotes:LS.f4713FlagNotes, f4713PendingReviews:LS.f4713PendingReviews, stageInventory:LS.stageInventory, courseMaterial:LS.courseMaterial, trainingLog:LS.trainingLog, trainingRoster:LS.trainingRoster, trainingEvents:LS.trainingEvents, trainingTypes:LS.trainingTypes, mandatoryTrainings:LS.mandatoryTrainings, keyRoster:LS.keyRoster, keyRosterOrgs:LS.keyRosterOrgs, keyRosterRoles:LS.keyRosterRoles, keyRosterBranches:LS.keyRosterBranches, tsCloseReasons:LS.tsCloseReasons, tsClosedTasks:LS.tsClosedTasks, notesHot:LS.notesHot, notesCold:LS.notesCold, suspenseTypes:LS.suspenseTypes, f47121Courses:LS.f47121Courses, f47121FlagNotes:LS.f47121FlagNotes, f47121IssbChief:LS.f47121IssbChief, qaEvals:LS.qaEvals, qaEvalChecklist:LS.qaEvalChecklist, f4713Status:LS.f4713Status, budgetFY:LS.budgetFY, inboxStatsMorning:LS.inboxStatsMorning, inboxStatsEvening:LS.inboxStatsEvening, bcSlides:LS.bcSlides, personnelStatus:LS.personnelStatus, personnelNotes:LS.personnelNotes, personnelStatusOptions:LS.personnelStatusOptions, personnelEodFlags:LS.personnelEodFlags, recurringReminders:LS.recurringReminders, consoleImprovements:LS.consoleImprovements, improvementTypes:LS.improvementTypes, sessionStatus:LS.sessionStatus, tabConfig:LS.tabConfig, lpReferencesCM:LS.lpReferencesCM, lpEquipmentCM:LS.lpEquipmentCM, lpMaterialsInstrCM:LS.lpMaterialsInstrCM, lpMaterialsStudentCM:LS.lpMaterialsStudentCM, lpClassroomTypesCM:LS.lpClassroomTypesCM, lpHazardsCM:LS.lpHazardsCM, lpLessonsCM:LS.lpLessonsCM, lpDraftCM:LS.lpDraftCM, cmSettings:LS.cmSettings, dropdownRegistry:LS.dropdownRegistry, passwords:LS.passwords, meetingPermAttendees:LS.meetingPermAttendees, templateRegistry:LS.templateRegistry, soiSchedules:LS.soiSchedules, form833:LS.form833, syllabusData:LS.syllabusData, syncTombstones:LS.syncTombstones, impTemplateBanks:LS.impTemplateBanks, meetingTypeBank:LS.meetingTypeBank, issCheckIn:LS.issCheckIn, issCheckInItemTypes:LS.issCheckInItemTypes, issCheckInMeetingStatuses:LS.issCheckInMeetingStatuses, travelOrders:LS.travelOrders, travelVouchers:LS.travelVouchers, customMilestones:LS.customMilestones, taskTriggerRules:LS.taskTriggerRules, taskTriggerInstances:LS.taskTriggerInstances, dayRoutines:LS.dayRoutines, githubCredentials:LS.githubCredentials, dpmapWindow:LS.dpmapWindow, products:LS.products, productSerialCounter:LS.productSerialCounter, courseDesign:LS.courseDesign, cdBanks:LS.cdBanks, issCheckInLog:LS.issCheckInLog, verbGovernance:LS.verbGovernance, siteSync:LS.siteSync, siteProfiles:LS.siteProfiles, calendarEvents:LS.calendarEvents};
+  const map = {courses:LS.courses, people:LS.people, tags:LS.tags, purpose:LS.purpose, tasks:LS.tasks, stageNotes:LS.stageNotes, issExtra:LS.issExtra, courseExtra:LS.courseExtra, taIssues:LS.taIssues, taSteps:LS.taSteps, taIssueMap:LS.taIssueMap, sessions:LS.sessions, imHistory:LS.imHistory, nameAliases:LS.nameAliases, issLastNames:LS.issLastNames, leaveLocations:LS.leaveLocations, fileNameTypes:LS.fileNameTypes, usefulUrls:LS.usefulUrls, seenRequestIds:LS.seenRequestIds, requestRefMap:LS.requestRefMap, notesArchiveCache:LS.notesArchiveCache, dailyAgendaItems:LS.dailyAgendaItems, dailyAgendaHeader:LS.dailyAgendaHeader, lastEndOfDayNote:LS.lastEndOfDayNote, f4713FlagNotes:LS.f4713FlagNotes, f4713PendingReviews:LS.f4713PendingReviews, stageInventory:LS.stageInventory, courseMaterial:LS.courseMaterial, trainingLog:LS.trainingLog, trainingRoster:LS.trainingRoster, trainingEvents:LS.trainingEvents, trainingTypes:LS.trainingTypes, mandatoryTrainings:LS.mandatoryTrainings, keyRoster:LS.keyRoster, keyRosterOrgs:LS.keyRosterOrgs, keyRosterRoles:LS.keyRosterRoles, keyRosterBranches:LS.keyRosterBranches, tsCloseReasons:LS.tsCloseReasons, tsClosedTasks:LS.tsClosedTasks, notesHot:LS.notesHot, notesCold:LS.notesCold, suspenseTypes:LS.suspenseTypes, f47121Courses:LS.f47121Courses, f47121FlagNotes:LS.f47121FlagNotes, f47121IssbChief:LS.f47121IssbChief, qaEvals:LS.qaEvals, qaEvalChecklist:LS.qaEvalChecklist, f4713Status:LS.f4713Status, budgetFY:LS.budgetFY, inboxStatsMorning:LS.inboxStatsMorning, inboxStatsEvening:LS.inboxStatsEvening, bcSlides:LS.bcSlides, personnelStatus:LS.personnelStatus, personnelNotes:LS.personnelNotes, personnelStatusOptions:LS.personnelStatusOptions, personnelEodFlags:LS.personnelEodFlags, recurringReminders:LS.recurringReminders, consoleImprovements:LS.consoleImprovements, improvementTypes:LS.improvementTypes, sessionStatus:LS.sessionStatus, tabConfig:LS.tabConfig, lpReferencesCM:LS.lpReferencesCM, lpEquipmentCM:LS.lpEquipmentCM, lpMaterialsInstrCM:LS.lpMaterialsInstrCM, lpMaterialsStudentCM:LS.lpMaterialsStudentCM, lpClassroomTypesCM:LS.lpClassroomTypesCM, lpHazardsCM:LS.lpHazardsCM, lpLessonsCM:LS.lpLessonsCM, lpDraftCM:LS.lpDraftCM, cmSettings:LS.cmSettings, dropdownRegistry:LS.dropdownRegistry, passwords:LS.passwords, meetingPermAttendees:LS.meetingPermAttendees, templateRegistry:LS.templateRegistry, soiSchedules:LS.soiSchedules, form833:LS.form833, syllabusData:LS.syllabusData, syncTombstones:LS.syncTombstones, impTemplateBanks:LS.impTemplateBanks, meetingTypeBank:LS.meetingTypeBank, issCheckIn:LS.issCheckIn, issCheckInItemTypes:LS.issCheckInItemTypes, issCheckInMeetingStatuses:LS.issCheckInMeetingStatuses, issCheckInMaterialStatuses:LS.issCheckInMaterialStatuses, travelOrders:LS.travelOrders, travelVouchers:LS.travelVouchers, customMilestones:LS.customMilestones, taskTriggerRules:LS.taskTriggerRules, taskTriggerInstances:LS.taskTriggerInstances, dayRoutines:LS.dayRoutines, githubCredentials:LS.githubCredentials, dpmapWindow:LS.dpmapWindow, products:LS.products, productSerialCounter:LS.productSerialCounter, courseDesign:LS.courseDesign, cdBanks:LS.cdBanks, issCheckInLog:LS.issCheckInLog, verbGovernance:LS.verbGovernance, siteSync:LS.siteSync, siteProfiles:LS.siteProfiles, calendarEvents:LS.calendarEvents};
   /* Fixed 2026-08-13, root cause of Mike re-entering his GitHub tokens
      twice and them never sticking: githubCredentials had an LS key and a
      STATE entry but was never added to this map, so persist() called
@@ -3023,8 +3237,20 @@ async function runPublicRepoSync(key){
     if(publicSyncPending.has(key)){ publicSyncPending.delete(key); schedulePublicRepoSync(key); }
   }
 }
+const COURSES_SEED_PUSH_BLOCKED = 'Course Data was not backed up. This console is still showing the built-in starter course list because the pull from GitHub has not succeeded yet, and pushing it would overwrite the real assignments with an outdated list. Reload once GitHub is reachable.';
+
 async function runPublicRepoSyncOnce(key){
   if(key==='courses'){
+    /* Never push a copy that is still the shipped seed, see
+       COURSES_WERE_SEEDED. If the pull failed, STATE.courses is the frozen
+       placeholder and pushing it would overwrite the only good copy of the
+       assignments with a months-old snapshot. Reported as a sync failure
+       rather than returning quietly, so the status bar says the backup did
+       not happen instead of implying it did. */
+    if(!coursesReconciled){
+      recordSyncFailure('courses (public repo)', new Error(COURSES_SEED_PUSH_BLOCKED));
+      return;
+    }
     try{
       await pushToGitHub('courses.json', STATE.courses, 'Auto-sync courses.json from EDDB Console, '+fmtDate(new Date()));
       clearSyncFailure('courses (public repo)');
@@ -3103,7 +3329,7 @@ const GENERIC_SYNC_KEYS = [
      draft no longer survives to another device mid-meeting. Nobody does that.
      Also worth noting it could never have deleted a row correctly either,
      since a union cannot express a deletion without a tombstone. */
-  'issCheckInItemTypes', 'issCheckInMeetingStatuses', 'travelOrders', 'travelVouchers', 'customMilestones',
+  'issCheckInItemTypes', 'issCheckInMeetingStatuses', 'issCheckInMaterialStatuses', 'travelOrders', 'travelVouchers', 'customMilestones',
   /* Added 2026-08-14 for the site's daily import job. imHistory and
      calendarEvents were simply never registered. taskTriggerInstances was
      deliberately left out (ss_seed_20260811_m) pending a decision on
@@ -4054,6 +4280,33 @@ function qaeIsResubmitted(s){
   }
 })();
 
+/* One-time migration, 2026-08-21, requested by Mike: Course Material status
+   on ISS Check-In moves off the Fixed Dropdown Registry onto a reusable
+   select-or-type-new bank, exactly as Meeting Type did on 2026-08-17 and for
+   the same reason. Adding a status should not require leaving the check-in.
+
+   Unlike the Meeting Type case this one cannot key on "is the new bank still
+   empty", because the new bank ships with the same four seeded values the
+   registry entry had, so it is never empty. It keys on set difference
+   instead: fold in any option Mike added to the old fixed dropdown that the
+   bank does not already carry. That is idempotent, it runs harmlessly every
+   load, and it cannot resurrect a value he later deletes from the bank...
+   which is the one thing worth saying out loud, because it can: deleting a
+   status from the bank while the same string still sits in the old registry
+   entry will bring it back on the next load. The old entry is left in place
+   rather than deleted, same precedent as meetingType and improvementTypes,
+   so historical records that resolved through it still display. If that
+   resurrection ever actually bites, the fix is a tombstone, not a rewrite. */
+(function migrateMaterialStatusToBank(){
+  const oldOptions = (STATE.dropdownRegistry.ciMaterialStatus && STATE.dropdownRegistry.ciMaterialStatus.options) || [];
+  const have = new Set(STATE.issCheckInMaterialStatuses.map(x=>String(x).trim().toLowerCase()));
+  const add = oldOptions.filter(o=>o && String(o).trim() && !have.has(String(o).trim().toLowerCase()));
+  if(add.length){
+    STATE.issCheckInMaterialStatuses = STATE.issCheckInMaterialStatuses.concat(add);
+    persist('issCheckInMaterialStatuses');
+  }
+})();
+
 function uniqSort(arr){
   return [...new Set(arr.filter(x=>x && x.trim() && !x.trim().toLowerCase().startsWith('vacant')))].sort((a,b)=>a.localeCompare(b));
 }
@@ -4687,8 +4940,18 @@ async function pullAllSharedData(){
   try{
     const remoteCourses = await pullFromGitHub('courses.json');
     if(Array.isArray(remoteCourses) && remoteCourses.length){
-      STATE.courses = mergeCoursesByNum(STATE.courses, remoteCourses);
+      /* Precedence now depends on provenance, see COURSES_WERE_SEEDED.
+         mergeCoursesByNum(a, b) sets b first and lets a overwrite it, so
+         the FIRST argument wins per course num. When the local copy is the
+         shipped seed the repo is authoritative and goes first; when it is
+         real user data the local edit goes first, which is the 2026-07-31
+         behaviour and is unchanged. Course numbers present on only one side
+         are folded in either way rather than dropped. */
+      STATE.courses = COURSES_WERE_SEEDED
+        ? mergeCoursesByNum(remoteCourses, STATE.courses)
+        : mergeCoursesByNum(STATE.courses, remoteCourses);
       saveJSON(LS.courses, STATE.courses);
+      coursesReconciled = true;
       results.courses = true;
     }
   }catch(e){ console.warn('Course pull failed, using local data:', e.message); }
@@ -7655,6 +7918,80 @@ function teamSaveCheckin(name){
 }
 let issCheckInCurrent = null;
 let issCheckInLastEmail = null; // {issName, email, summaryRef} - survives the post-closeout re-render
+/* ------------------------------------------------------------------
+   ISS Check-In select-or-type-new fields, 2026-08-21, requested by Mike:
+   four dropdowns on this tab were "fixed", meaning a new value could only be
+   added from Data > Dropdowns, or in two cases not at all from the UI.
+
+   One helper rather than four near-copies, because these four all have to
+   agree on the same three facts (how the id is built, how the value is read
+   back, and what happens when a new value is typed) and this project has
+   been bitten before by two places answering the same question differently.
+
+   createSingleSelect needs real element ids, so each row gets one derived
+   from its class and its own data key. The key is hashed to a safe token
+   because a course-material key looks like "036|folder6b8" and a REF or
+   control number can carry characters that are not valid in an id. Ids are
+   unique within the rendered panel, which is the actual requirement. */
+/* A monotonic counter rather than a hash of the row key. A hash would be
+   stable across renders, which sounds nicer, but two different keys can
+   collide and a duplicate id here means two rows silently share one dropdown,
+   which is the exact "two renderers sharing an id" failure this project
+   already has a standing rule about. A counter cannot collide. Nothing reads
+   meaning out of the id: the wiring reads input.id back off the element it
+   already has, so the id only has to be unique, not descriptive. */
+let ciFieldSeq = 0;
+function ciFieldId(cls){
+  ciFieldSeq += 1;
+  return 'cif_' + cls.replace(/[^a-z0-9]/gi,'') + '_' + ciFieldSeq;
+}
+/* Echoes the lead-in this section's comments will appear under in the summary
+   email, plus the reminder that the email is spoken TO the ISS while these
+   boxes are filled in as data intake. 2026-08-21, Mike's own diagnosis: he
+   could not tell what wording his notes would be dropped into, so they came
+   out in the wrong voice ("her teams", "Taneya did request extension") under a
+   lead-in written in the second person.
+
+   It reads the live template part, not a copy, so rewording a lead-in on
+   Data > Templates changes the hint too. If the two could disagree the hint
+   would eventually be actively misleading, which is worse than no hint. */
+function ciLeadInHint(key, fallback, extra){
+  const lead = ciLeadIn(key, fallback);
+  return '<div class="hint" style="padding-left:0;margin:2px 0 4px;">Appears in the email under: <b>' +
+         escapeHtml(lead) + '</b> &nbsp;&middot;&nbsp; write it as you would say it to them' +
+         (extra ? ' (' + escapeHtml(extra) + ')' : '') + '</div>';
+}
+function ciBankFieldHTML(cls, key, value, width){
+  const id = ciFieldId(cls);
+  return '<span class="mswrap" style="position:relative;max-width:'+width+'px;flex:none;margin-left:8px;">' +
+         '<input type="text" class="fi '+cls+'" id="'+id+'" data-key="'+escapeHtml(String(key))+'"' +
+         ' value="'+escapeHtml(value||'')+'" placeholder="Status" autocomplete="off" style="width:100%;">' +
+         '<div id="'+id+'_dd"></div></span>';
+}
+/* bankName is the STATE key, so the bank read here and the bank written by a
+   newly typed value are the same array by construction. onPick receives the
+   row key and the chosen text. */
+function ciWireBankFields(wrap, cls, bankName, onPick){
+  wrap.querySelectorAll('.'+cls).forEach(input=>{
+    const key = input.dataset.key;
+    const id = input.id;
+    createSingleSelect(id, id+'_dd', {
+      getBank: ()=>STATE[bankName],
+      hint: 'Type to search. Tab picks the top match. Enter adds it to the list.',
+      addNew: (val)=>{ STATE[bankName].push(val); persist(bankName); },
+      removeFromBank: (item)=>{
+        const i = STATE[bankName].indexOf(item);
+        if(i>=0){ STATE[bankName].splice(i,1); persist(bankName); }
+      },
+      onSelect: (item, label)=>{ onPick(key, label); }
+    });
+    /* Typing a value and clicking away without pressing Enter still has to
+       record what is on screen, otherwise a status reads as set and closes
+       out as blank. Blur is the only event that catches that path. */
+    input.addEventListener('blur', ()=>{ onPick(key, input.value.trim()); });
+  });
+}
+
 function renderISSCheckIn(){
   const el = document.getElementById('personnelBody');
   const isses = STATE.trainingRoster.filter(n=>n!=='Mike Hefling'); // Mike doesn't check in with himself
@@ -7690,7 +8027,7 @@ function issCheckInRenderCard(issName){
 
   let html = '<div class="fr"><div class="lb">Date</div><input type="date" class="fi" id="ci_date" value="'+escapeHtml(draft.date)+'" style="max-width:180px;"></div>';
 
-  html += '<div class="sh nv" style="margin-top:10px;">Course Evaluations</div>';
+  html += '<div class="sh nv" style="margin-top:10px;">Course Evaluations</div>' + ciLeadInHint('updatedLeadIn','We also updated;','your comment becomes the bracketed note after the item');
   if(!qaEvals.length){
     html += '<div class="hint" style="padding-left:0;">Nothing scheduled in the current window.</div>';
   }
@@ -7716,14 +8053,12 @@ function issCheckInRenderCard(issName){
     html += '<div class="fr"><input type="checkbox" class="ci-check" data-section="meeting" data-key="'+escapeHtml(m.controlNumber)+'" '+(checked?'checked':'')+' style="flex:none;width:auto;margin-right:8px;">' +
       '<div style="flex:1;">Crs '+escapeHtml(m.controlNumber)+' - '+escapeHtml(m.title)+', '+escapeHtml(m.beginDate)+'</div>' +
       cmPillHTML(m.beginDate, checked?'complete':'unset') +
-      '<select class="fi ci-meetstatus" data-key="'+escapeHtml(m.controlNumber)+'" style="max-width:140px;flex:none;margin-left:8px;">'+
-        STATE.issCheckInMeetingStatuses.map(s=>'<option'+(s===(draft.meetingStatus[m.controlNumber]||'')?' selected':'')+'>'+escapeHtml(s)+'</option>').join('')+
-      '</select>' +
+      ciBankFieldHTML('ci-meetstatus', m.controlNumber, draft.meetingStatus[m.controlNumber]||'', 140) +
       '<input type="date" class="fi ci-meetdate" data-key="'+escapeHtml(m.controlNumber)+'" value="'+escapeHtml(draft.meetingDates[m.controlNumber]||'')+'" style="max-width:150px;flex:none;margin-left:8px;">' +
       '<input type="text" class="fi ci-comment" data-section="meeting" data-key="'+escapeHtml(m.controlNumber)+'" placeholder="Comment" value="'+escapeHtml(draft.meetingComments[m.controlNumber]||'')+'" style="flex:1;margin-left:8px;"></div>';
   });
 
-  html += '<div class="sh am" style="margin-top:10px;">Course Material</div>';
+  html += '<div class="sh am" style="margin-top:10px;">Course Material</div>' + ciLeadInHint('updatedLeadIn','We also updated;');
   if(!material.length){
     html += '<div class="hint" style="padding-left:0;">Nothing outstanding in the current window.</div>';
   }
@@ -7733,12 +8068,12 @@ function issCheckInRenderCard(issName){
     html += '<div class="fr"><input type="checkbox" class="ci-check" data-section="material" data-key="'+escapeHtml(key)+'" '+(checked?'checked':'')+' style="flex:none;width:auto;margin-right:8px;">' +
       '<div style="flex:1;">Crs '+escapeHtml(m.courseNum)+' - '+escapeHtml(m.courseTitle)+': '+escapeHtml(m.milestoneLabel)+'</div>' +
       cmPillHTML(m.due, checked?'complete':'unset') +
-      '<select class="fi ci-matstatus" data-key="'+escapeHtml(key)+'" style="max-width:120px;flex:none;margin-left:8px;">'+dropdownOptionsHtml('ciMaterialStatus', draft.materialStatus[key]||'')+'</select>' +
+      ciBankFieldHTML('ci-matstatus', key, draft.materialStatus[key]||'', 130) +
       '<input type="date" class="fi ci-matdate" data-key="'+escapeHtml(key)+'" value="'+escapeHtml(draft.materialDates[key]||'')+'" style="max-width:150px;flex:none;margin-left:8px;">' +
       '<input type="text" class="fi ci-matcomment" data-key="'+escapeHtml(key)+'" placeholder="Comment" value="'+escapeHtml(draft.materialComments[key]||'')+'" style="flex:1;margin-left:8px;"></div>';
   });
 
-  html += '<div class="sh gn" style="margin-top:10px;">Development</div>';
+  html += '<div class="sh gn" style="margin-top:10px;">Development</div>' + ciLeadInHint('updatedLeadIn','We also updated;');
   if(!development.length){
     html += '<div class="hint" style="padding-left:0;">No courses assigned to this ISS are typed Dev right now.</div>';
   }
@@ -7746,12 +8081,12 @@ function issCheckInRenderCard(issName){
     const checked = draft.checkedDevelopment.includes(d.courseNum);
     html += '<div class="fr"><input type="checkbox" class="ci-check" data-section="development" data-key="'+escapeHtml(d.courseNum)+'" '+(checked?'checked':'')+' style="flex:none;width:auto;margin-right:8px;">' +
       '<div style="flex:1;">Crs '+escapeHtml(d.courseNum)+' - '+escapeHtml(d.courseTitle)+'</div>' +
-      '<select class="fi ci-devstatus" data-key="'+escapeHtml(d.courseNum)+'" style="max-width:150px;flex:none;margin-left:8px;">'+dropdownOptionsHtml('ciMaterialStatus', draft.developmentStatus[d.courseNum]||'')+'</select>' +
+      ciBankFieldHTML('ci-devstatus', d.courseNum, draft.developmentStatus[d.courseNum]||'', 150) +
       '<input type="date" class="fi ci-devdate" data-key="'+escapeHtml(d.courseNum)+'" value="'+escapeHtml(draft.developmentDates[d.courseNum]||'')+'" style="max-width:150px;flex:none;margin-left:8px;">' +
       '<input type="text" class="fi ci-comment" data-section="development" data-key="'+escapeHtml(d.courseNum)+'" placeholder="Comment" value="'+escapeHtml(draft.developmentComments[d.courseNum]||'')+'" style="flex:1;margin-left:8px;"></div>';
   });
 
-  html += '<div class="sh tl" style="margin-top:10px;">Other Open Items</div>';
+  html += '<div class="sh tl" style="margin-top:10px;">Other Open Items</div>' + ciLeadInHint('updatedLeadIn','We also updated;');
   if(!other.length){
     html += '<div class="hint" style="padding-left:0;">Nothing else open right now.</div>';
   }
@@ -7785,10 +8120,10 @@ function issCheckInRenderCard(issName){
   });
   html += '<div class="genrow"><button class="dbtn secondary ci-addrow" data-section="taskRows" style="font-size:9px;padding:3px 8px;">+ Add Task</button></div>';
 
-  html += '<div class="sh nv" style="margin-top:10px;">Open Notes</div>';
+  html += '<div class="sh nv" style="margin-top:10px;">Open Notes</div>' + ciLeadInHint('capturedLeadIn','We also discussed and captured;') + ciLeadInHint('flowersLeadIn','I also want to give you your Flowers for:','rows typed Flowers go here instead');
   draft.openNotesRows.forEach((row,idx)=>{
     const hasRealDate = row.date && row.date!=='N/A';
-    html += '<div class="fr"><select class="fi ci-row-type" data-idx="'+idx+'" style="max-width:140px;"></select>' +
+    html += '<div class="fr">' + ciBankFieldHTML('ci-row-type', idx, row.itemType||'', 140).replace('margin-left:8px', 'margin-left:0').replace('placeholder="Status"', 'placeholder="Type"') +
       '<input type="text" class="fi ci-row-comment" data-idx="'+idx+'" value="'+escapeHtml(row.comment)+'" style="flex:1;margin-left:6px;">' +
       '<input type="date" class="fi ci-row-date" data-idx="'+idx+'" value="'+(hasRealDate?escapeHtml(row.date):'')+'" style="max-width:150px;margin-left:6px;">' +
       (hasRealDate ? cmPillHTML(row.date, 'unset') : '') +
@@ -7796,14 +8131,14 @@ function issCheckInRenderCard(issName){
   });
   html += '<div class="genrow"><button class="dbtn secondary ci-addrow" data-section="openNotesRows" style="font-size:9px;padding:3px 8px;">+ Add Row</button></div>';
 
-  html += '<div class="sh gn" style="margin-top:10px;">Training or Resources Needed</div>';
+  html += '<div class="sh gn" style="margin-top:10px;">Training or Resources Needed</div>' + ciLeadInHint('requestedLeadIn','You requested','so start with the thing, not with the word Requested');
   draft.trainingRows.forEach((row,idx)=>{
     html += '<div class="fr"><input type="text" class="fi ci-simplerow-comment" data-section="trainingRows" data-idx="'+idx+'" value="'+escapeHtml(row.comment)+'" style="flex:1;">' +
       '<span class="lmdel ci-row-del" data-section="trainingRows" data-idx="'+idx+'" style="cursor:pointer;padding:0 6px;">&times;</span></div>';
   });
   html += '<div class="genrow"><button class="dbtn secondary ci-addrow" data-section="trainingRows" style="font-size:9px;padding:3px 8px;">+ Add Row</button></div>';
 
-  html += '<div class="sh am" style="margin-top:10px;">BC Due Outs</div>';
+  html += '<div class="sh am" style="margin-top:10px;">BC Due Outs</div>' + ciLeadInHint('oweLeadIn','I owe you','so write the thing owed, not the task verb: "clarity on X", not "Provide clarity on X"');
   draft.bcDueOutRows.forEach((row,idx)=>{
     const hasRealDate = row.date && row.date!=='N/A';
     html += '<div class="fr"><input type="text" class="fi ci-simplerow-comment" data-section="bcDueOutRows" data-idx="'+idx+'" value="'+escapeHtml(row.comment)+'" style="flex:1;">' +
@@ -7830,13 +8165,39 @@ function issCheckInRenderCard(issName){
   wrap.innerHTML = html;
   wireCopyButtons(wrap);
 
-  // Item Type select needs the reusable-list options, not a Fixed Dropdown Registry entry
-  wrap.querySelectorAll('.ci-row-type').forEach(sel=>{
-    sel.innerHTML = STATE.issCheckInItemTypes.map(t=>'<option'+(t===draft.openNotesRows[parseInt(sel.dataset.idx,10)].itemType?' selected':'')+'>'+escapeHtml(t)+'</option>').join('');
-    sel.addEventListener('change', ()=>{
-      draft.openNotesRows[parseInt(sel.dataset.idx,10)].itemType = sel.value;
+  /* 2026-08-21, requested by Mike: all four of these are now select-or-type-new
+     rather than a fixed list. Open Notes item type and Meeting status were
+     already backed by reusable banks but rendered as a plain <select>, so the
+     bank could only be edited from Data > Dropdowns and never from the row you
+     were looking at. Course Material and Development status were worse, both
+     read a Fixed Dropdown Registry entry. All four go through the same helper
+     so the read path and the add-new path cannot drift apart. */
+  wrap.querySelectorAll('.ci-row-type').forEach(input=>{
+    const idx = parseInt(input.dataset.key, 10);
+    const id = input.id;
+    createSingleSelect(id, id+'_dd', {
+      getBank: ()=>STATE.issCheckInItemTypes,
+      hint: 'Type to search. Tab picks the top match. Enter adds it to the list.',
+      addNew: (val)=>{ STATE.issCheckInItemTypes.push(val); persist('issCheckInItemTypes'); },
+      removeFromBank: (item)=>{
+        const i = STATE.issCheckInItemTypes.indexOf(item);
+        if(i>=0){ STATE.issCheckInItemTypes.splice(i,1); persist('issCheckInItemTypes'); }
+      },
+      onSelect: (item, label)=>{ draft.openNotesRows[idx].itemType = label; persist('issCheckIn'); }
+    });
+    input.addEventListener('blur', ()=>{
+      draft.openNotesRows[idx].itemType = input.value.trim();
       persist('issCheckIn');
     });
+  });
+  ciWireBankFields(wrap, 'ci-meetstatus', 'issCheckInMeetingStatuses', (key, val)=>{
+    draft.meetingStatus[key] = val; persist('issCheckIn');
+  });
+  ciWireBankFields(wrap, 'ci-matstatus', 'issCheckInMaterialStatuses', (key, val)=>{
+    draft.materialStatus[key] = val; persist('issCheckIn');
+  });
+  ciWireBankFields(wrap, 'ci-devstatus', 'issCheckInMaterialStatuses', (key, val)=>{
+    draft.developmentStatus[key] = val; persist('issCheckIn');
   });
 
   wrap.querySelectorAll('.ci-check').forEach(cb=>cb.addEventListener('change', ()=>{
@@ -7880,16 +8241,8 @@ function issCheckInRenderCard(issName){
         persist('issCheckIn');
       }));
     });
-  wrap.querySelectorAll('.ci-devstatus').forEach(sel=>sel.addEventListener('change', ()=>{
-    draft.developmentStatus[sel.dataset.key] = sel.value;
-    persist('issCheckIn');
-  }));
   wrap.querySelectorAll('.ci-devdate').forEach(inp=>inp.addEventListener('change', ()=>{
     draft.developmentDates[inp.dataset.key] = inp.value;
-    persist('issCheckIn');
-  }));
-  wrap.querySelectorAll('.ci-meetstatus').forEach(sel=>sel.addEventListener('change', ()=>{
-    draft.meetingStatus[sel.dataset.key] = sel.value;
     persist('issCheckIn');
   }));
   wrap.querySelectorAll('.ci-meetdate').forEach(inp=>inp.addEventListener('change', ()=>{
@@ -7899,10 +8252,6 @@ function issCheckInRenderCard(issName){
 
   // Course Material status/date/comment: check-in-local, separate from
   // the milestone's own complete/unset flag on Course Material Timeline.
-  wrap.querySelectorAll('.ci-matstatus').forEach(sel=>sel.addEventListener('change', ()=>{
-    draft.materialStatus[sel.dataset.key] = sel.value;
-    persist('issCheckIn');
-  }));
   wrap.querySelectorAll('.ci-matdate').forEach(inp=>inp.addEventListener('change', ()=>{
     draft.materialDates[inp.dataset.key] = inp.value;
     persist('issCheckIn');
@@ -9328,6 +9677,47 @@ function issCheckInOtherOpen(issName, alreadyCoveredCourseNums){
       same as "I owe you" (omit if the Training/Resources list is
       empty) since an empty "You requested ." reads as broken, but this
       is a disclosed inference, not literally specified either way. */
+/* One item, one line. 2026-08-21, reported by Mike.
+
+   Every list in this email used to be joined with '; ' into a single
+   sentence, which is unreadable past about three items and which he could
+   not change from Data > Templates because no token existed that could
+   express a line break per item.
+
+   ciTidyItem is the other half of what he reported. Items are captured as
+   data intake, so they arrive carrying trailing dashes, stray whitespace and
+   in one case a duplicated word ("PILLAR OLC Adjunct Instructor Dev
+   Assignment Requested-" under a lead-in that already says "You requested").
+   Trimming is safe and mechanical. Rewriting the voice is not, and is
+   deliberately NOT attempted: turning "Taneya did request extension" into
+   second person means pronoun rewriting on free text, which will be wrong
+   often enough to poison trust in the whole email. The lead-in is surfaced
+   as helper text on the form instead, so the sentence is written in the
+   right voice at capture. */
+function ciTidyItem(text){
+  let t = String(text == null ? '' : text).trim();
+  t = t.replace(/[\s\u2013\u2014-]+$/, '');   // trailing dashes and whitespace
+  t = t.replace(/[;,]+$/, '');                 // trailing separator left by a paste
+  return t.trim();
+}
+/* A lead-in followed by one dash bullet per item, or nothing at all when the
+   list is empty, so an absent section leaves no dangling heading. Reads the
+   lead-in out of the template registry, the same string the form shows as
+   helper text, because two places answering "what is the lead-in" differently
+   is how the help stops matching the output. */
+function ciBlock(leadInKey, items){
+  const list = (items || []).map(ciTidyItem).filter(Boolean);
+  if(!list.length) return '';
+  const tpl = STATE.templateRegistry.issCheckInSummary || {};
+  const leadIn = (tpl[leadInKey] || '').trim();
+  return (leadIn ? leadIn + '\n' : '') + list.map(x=>'-' + x).join('\n') + '\n\n';
+}
+function ciLeadIn(key, fallback){
+  const tpl = STATE.templateRegistry.issCheckInSummary || {};
+  const v = (tpl[key] || '').trim();
+  return v || fallback;
+}
+
 function issCheckInBuildEmail(issName, data){
   const dateStr = fmtLong(new Date());
   const refVal = data.summaryRef;
@@ -9339,8 +9729,21 @@ function issCheckInBuildEmail(issName, data){
   });
   const dueOutsText = dueOutsSorted.map(d=>d.label).join('; ');
   const updatedText = data.updatedItems.join('; ');
-  const requestedText = data.trainingRequests.join('; ');
-  const oweText = data.bcDueOuts.join('; ');
+  /* The Training/Resources rows are captured as "<thing> Requested-", so under
+     a lead-in that already reads "You requested" the word lands twice. Stripping
+     a trailing "Requested" or "Request" is narrow enough to be safe: it only
+     applies to this one list, only at the very end of the string, and only as a
+     whole word, so "Requested extension" or "Request for waiver" in the middle
+     of a sentence is untouched. Scoped here rather than inside ciTidyItem
+     because no other list sits under a lead-in that repeats it. */
+  /* Order matters and got this wrong once: the captured text ends
+     "Requested- ", so the trailing dash has to come off BEFORE the word is
+     visible at the end of the string, and tidy runs again afterwards to clear
+     whatever the word removal left behind. */
+  const requestedText = data.trainingRequests
+    .map(t => ciTidyItem(ciTidyItem(t).replace(/\s+requests?(ed)?$/i, '')))
+    .filter(Boolean).join('; ');
+  const oweText = data.bcDueOuts.map(ciTidyItem).filter(Boolean).join('; ');
   /* Anything captured in Open Notes that is not already named in the due-out
      list. Dated items appear there with their suspense; undated ones,
      recognition and custom types would otherwise appear nowhere at all. */
@@ -9348,6 +9751,18 @@ function issCheckInBuildEmail(issName, data){
   const capturedText = openNoteItems.filter(i=>!i.date).map(i=>
     (i.type && i.type!=='Task' ? i.type+': ' : '') + i.comment + (i.ref ? ' (REF #'+i.ref+')' : '')
   ).join('; ');
+
+  /* Flowers come out of the captured list and get their own block. They were
+     being appended to "We also discussed and captured" alongside concerns and
+     tasks, which reads as admin rather than as recognition, and Mike asked for
+     them called out. The type prefix is dropped inside the block because the
+     lead-in already says what they are; repeating "Flowers:" on every line
+     under "I also want to give you your Flowers for:" is noise. */
+  const undated = openNoteItems.filter(i=>!i.date);
+  const flowersItems = undated.filter(i=>i.type==='Flowers').map(i=>
+    i.comment + (i.ref ? ' (REF #'+i.ref+')' : ''));
+  const capturedItems = undated.filter(i=>i.type!=='Flowers').map(i=>
+    (i.type && i.type!=='Task' ? i.type+': ' : '') + i.comment + (i.ref ? ' (REF #'+i.ref+')' : ''));
 
   /* Each conditional sentence is composed here and handed to the template as
      a single token, so a sentence with nothing to say resolves to empty
@@ -9357,11 +9772,20 @@ function issCheckInBuildEmail(issName, data){
     iss: issName,
     dateStr: dateStr,
     ref: refVal,
-    dueOutsSentence: (dueOutsText ? 'Still due out; '+dueOutsText+'.' : 'Nothing else is due out at this time.')+'\n',
-    updatedSentence: updatedText ? 'We also updated '+updatedText+'.\n' : '',
-    capturedSentence: capturedText ? 'We also discussed and captured '+capturedText+'.\n' : '',
-    requestedSentence: requestedText ? 'You requested '+requestedText+'.\n\n' : '',
-    oweSentence: oweText ? 'I owe you '+oweText+'.\n\n' : '',
+    /* Legacy single-sentence tokens. Still produced so a template someone has
+       already customised keeps working; the shipped default no longer uses
+       them. Their lead-ins now come from the same registry parts the blocks
+       read, so rewording a lead-in changes both and they cannot drift. */
+    dueOutsSentence: (dueOutsText ? ciLeadIn('dueOutsLeadIn','Still due out;')+' '+dueOutsText+'.' : 'Nothing else is due out at this time.')+'\n',
+    updatedSentence: updatedText ? ciLeadIn('updatedLeadIn','We also updated;')+' '+updatedText+'.\n' : '',
+    capturedSentence: capturedText ? ciLeadIn('capturedLeadIn','We also discussed and captured;')+' '+capturedText+'.\n' : '',
+    /* One bullet per line. */
+    updatedBlock: ciBlock('updatedLeadIn', data.updatedItems),
+    flowersBlock: ciBlock('flowersLeadIn', flowersItems),
+    capturedBlock: ciBlock('capturedLeadIn', capturedItems),
+    dueOutsBlock: ciBlock('dueOutsLeadIn', dueOutsSorted.map(d=>d.label)),
+    requestedSentence: requestedText ? ciLeadIn('requestedLeadIn','You requested')+' '+requestedText+'.\n\n' : '',
+    oweSentence: oweText ? ciLeadIn('oweLeadIn','I owe you')+' '+oweText+'.\n\n' : '',
     nextCheckInDate: data.nextCheckInDate,
     nextCheckInTime: data.nextCheckInTime
   };
@@ -9599,7 +10023,21 @@ function issCheckInCloseoutMeeting(issName){
       NOTE: row.comment, 'DUE DATE': row.date!=='N/A' ? row.date : '', STATUS: 'Open'
     }, 'hot');
     bcDueOuts.push(row.comment);
-    if(row.date && row.date!=='N/A') dueOuts.push({label:'REF #'+note.REF+' - '+row.comment, suspenseDate: row.date});
+    /* 2026-08-21, reported by Mike: a BC due-out was printing twice, once at
+       the top as "Still due out; REF #2415 - Provide clarity on..." and again
+       at the bottom as "I owe you Provide clarity on...". Same item, same REF,
+       two places.
+
+       Removed from the due-out list rather than from the "I owe you" line,
+       because they are not the same kind of thing. "Still due out" is what the
+       ISS owes me; a BC due-out is what I owe them. Mixing the two under one
+       heading was wrong independently of the duplication.
+
+       Stated tradeoff: the suspense date no longer reaches the email for a BC
+       due-out, since only the due-out list carried dates. The REF note still
+       holds it, and it still drives my own suspense tracking. If the date needs
+       to be in the email it belongs on the "I owe you" line with its own
+       wording, not by putting the item back in a list that means the opposite. */
   });
 
   // 8. Build and log the summary email as a cold REF note
@@ -13540,6 +13978,19 @@ function lvTidyCalEntry(text){
     .filter(part=>part.length)
     .join(', ');
 }
+/* One definition of "which roster row is this person", so the leave entry and
+   anything that needs the same answer later cannot resolve it differently. */
+function lvFindRosterByName(name){
+  const v = String(name==null?'':name).trim();
+  if(!v) return null;
+  const lower = v.toLowerCase();
+  const roster = STATE.keyRoster || [];
+  return roster.find(k=>k && k.preferredName===v)
+      || roster.find(k=>k && String(k.preferredName||'').trim().toLowerCase()===lower)
+      || roster.find(k=>k && String(k.firstName||'').trim().toLowerCase()===lower)
+      || roster.find(k=>k && String(k.name||'').trim().split(/\s+/)[0].toLowerCase()===lower)
+      || null;
+}
 function lvBuildCalEntry(reason, opts){
   const isTdy = String(reason||'').trim().toUpperCase() === 'TDY';
   const raw = isTdy
@@ -13561,8 +14012,25 @@ function refreshLvCalDeliv(){
   if(!out) return;
   const issVal = gvv('lv_iss');
   if(!issVal){ out.value = ''; return; }
-  const rosterRec = STATE.keyRoster.find(k=>k.preferredName===issVal);
-  const last = (rosterRec && rosterRec.lastName) ? rosterRec.lastName : issVal;
+  /* 2026-08-21, reported by Mike: the entry came out "Brenda, Brenda, 1.5 hrs"
+     instead of "Lawson, Brenda, 1.5 hrs".
+
+     Two faults, and the second is the one that matters. The lookup matched only
+     on an exact preferredName, so any difference in spacing or case missed. And
+     when it missed, the fallback substituted issVal, the FIRST name, into the
+     last name slot. That produces a line that looks finished and is wrong,
+     which is the worst possible failure for something pasted into a shared
+     calendar. Every other unresolved token in this same builder degrades to a
+     visible placeholder, [Hours], [Location], [Leave type]; this one silently
+     invented data instead.
+
+     The lookup now tries exact preferredName, then case-insensitive
+     preferredName, then firstName, then the first word of a full name field,
+     so a roster row spelled slightly differently still resolves. If nothing
+     resolves it returns [Last name], which says plainly that the Key Roster
+     needs a last name for this person rather than pretending it had one. */
+  const rosterRec = lvFindRosterByName(issVal);
+  const last = (rosterRec && rosterRec.lastName) ? rosterRec.lastName : '[Last name]';
   out.value = lvBuildCalEntry(gvv('lv_reason'), {
     lastName: last, preferredName: issVal,
     hours: gvv('lv_hours'), course: gvv('lv_course'), location: gvv('lv_location')
@@ -25785,6 +26253,18 @@ function initDataTab(){
     btn.disabled = true;
     btn.textContent = 'Pushing...';
     statusEl.style.display = 'none';
+    /* Same guard as the auto-push, see COURSES_WERE_SEEDED. A deliberate
+       button click is not evidence that the data behind it is real, and
+       this is the one button that can overwrite the only good copy of the
+       assignments. */
+    if(!coursesReconciled){
+      statusEl.style.display = 'block';
+      statusEl.style.color = 'var(--red)';
+      statusEl.textContent = COURSES_SEED_PUSH_BLOCKED;
+      btn.disabled = false;
+      btn.textContent = originalText;
+      return;
+    }
     try{
       await pushToGitHub('courses.json', STATE.courses, 'Update courses.json from EDDB Console, '+fmtDate(new Date()));
       statusEl.style.display = 'block';
@@ -27227,6 +27707,7 @@ const LIST_MGR_LABELS = {
   taSteps: {label:'T&A Steps to Resolve', hint:'Resolution steps remembered from the T&A tab.'},
   leaveLocations: {label:'TDY / Leave Locations', hint:'Locations remembered from the TDY/Leave tab.'},
   issCheckInItemTypes: {label:'ISS Check-In \u2014 Open Notes Item Types', hint:'Item type options for ISS Check-In > Open Notes.'},
+  issCheckInMaterialStatuses: {label:'ISS Check-In \u2014 Course Material Statuses', hint:'Status options for ISS Check-In > Course Material and Development. Type a new one straight into the row on the check-in to add it.'},
   issCheckInMeetingStatuses: {label:'ISS Check-In \u2014 Meeting Statuses', hint:'Status options for ISS Check-In > Upcoming Meetings, check-in-local only.'}
 };
 
@@ -27361,6 +27842,19 @@ function renderTemplatesEditor(){
   wrap.innerHTML = ids.map(id=>{
     const t = tplDraft[id];
     const tokenList = t.tokens.map(k=>'<div style="margin:2px 0;"><code style="background:#F1F4F8;padding:1px 4px;border-radius:6px;">{{'+k+'}}</code> \u2014 '+escapeHtml(TPL_TOKEN_DEFS[k]||'(no description yet)')+'</div>').join('');
+    /* Anything written into a part that this template cannot supply. Printed
+       above the fields rather than below, because the point is to be seen
+       before the next edit is made. */
+    const unknown = tplUnknownTokens(t);
+    const unknownHtml = unknown.length
+      ? '<div style="border:1px solid var(--red);border-radius:8px;padding:6px 8px;margin:4px 0 6px;font-size:10.5px;">' +
+        '<b style="color:var(--red);">This template will print these as plain text, they are not real tokens:</b>' +
+        unknown.map(u=>'<div style="margin-top:3px;"><code style="background:#F1F4F8;padding:1px 4px;border-radius:6px;">{{'+escapeHtml(u.token)+'}}</code> in ' +
+          escapeHtml(tplPartLabel(u.part)) +
+          (u.suggestion ? ' &nbsp;&rarr;&nbsp; did you mean <code style="background:#F1F4F8;padding:1px 4px;border-radius:6px;">{{'+escapeHtml(u.suggestion)+'}}</code>?' : '')
+          + '</div>').join('') +
+        '</div>'
+      : '';
     const metaKeys = ['label','mainTabKey','childTabKey','tokens'];
     const partKeys = Object.keys(t).filter(k=>!metaKeys.includes(k));
     const partsHtml = partKeys.map(k=>{
@@ -27371,11 +27865,16 @@ function renderTemplatesEditor(){
       '<div class="sh nv" style="margin:-8px -8px 6px -8px;">'+escapeHtml(t.label)+'</div>' +
       '<div class="hint" style="padding-left:0;font-weight:700;margin-top:4px;">Tokens used here</div>' +
       '<div style="font-size:10.5px;margin-bottom:4px;">'+tokenList+'</div>' +
+      unknownHtml +
       partsHtml +
     '</div>';
   }).join('');
   wrap.querySelectorAll('.tpl-field').forEach(el=>el.addEventListener('change', ()=>{
     tplDraft[el.dataset.id][el.dataset.kind] = el.value;
+    /* Re-render so the unknown-token warning reflects what was just typed. A
+       warning that only appears on a fresh visit to the tab would be missed by
+       exactly the edit that caused it. */
+    renderTemplatesEditor();
   }));
 }
 function initTemplatesEditor(){
@@ -28194,6 +28693,9 @@ async function startApp(){
   migrateBcSlidesMeetingsToImHistory();
 
   mergeTemplateRegistryDefaults();
+  /* Must run AFTER the backfill: the backfill is what puts the new lead-in
+     parts in place, and the replacement body references them. */
+  migrateCheckInSummaryBody();
 
   ensureTabConfigDefaults();
   applyTabConfig();

@@ -4,6 +4,86 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>EDDB Console</title>
+<!-- Boot error reporter, added 2026-08-19. Runs before every other script so
+     it is installed no matter what happens later.
+
+     This exists because a script that dies at load leaves the page sitting on
+     its static HTML, and the most visible piece of static HTML is the footer
+     reading "Checking GitHub...". That looks like a network hang and is not
+     one: nothing is being checked, the script stopped. It has now presented
+     that way twice, on 2026-08-02 from a syntax error and again today, and
+     both times the real cause was invisible because devtools are blocked on
+     this machine, so there was no console to read the actual error from.
+
+     Writes the real error, with file line and column, into a banner at the
+     top of the page and into the footer span. Deliberately dependency free
+     and self contained: no STATE, no helpers, nothing from the main script,
+     because the whole point is that it has to work when the main script does
+     not. Also flags the case where the script parsed but never reached
+     startApp, which looks identical on screen but means something different. -->
+<script>
+(function(){
+  var shown = false, pending = null;
+  function setFooter(txt){
+    var f = document.getElementById('githubSyncStatus');
+    if(f){ f.textContent = txt; f.style.color = '#CF0000'; return true; }
+    return false;
+  }
+  function paint(kind, msg, where){
+    if(shown) return; shown = true;
+    var footerTxt = kind + ' - the console did not finish loading. See the red banner at the top.';
+    /* The footer lives in the body and this script runs in the head, so on an
+       early failure the element does not exist yet. Remember the message and
+       write it once the DOM is there, rather than silently dropping it and
+       leaving the footer insisting it is checking GitHub. */
+    if(!setFooter(footerTxt)){
+      pending = footerTxt;
+      document.addEventListener('DOMContentLoaded', function(){ if(pending) setFooter(pending); });
+    }
+    try{
+      var b = document.createElement('div');
+      b.setAttribute('id','bootErrorBanner');
+      b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#FDECEC;border-bottom:3px solid #CF0000;color:#7A0000;font:12px/1.45 Arial,Helvetica,sans-serif;padding:10px 14px;max-height:45vh;overflow:auto;';
+      b.innerHTML = '<div style="font-weight:700;font-size:13px;margin-bottom:4px;">The console did not finish loading (' + kind + ')</div>' +
+        '<div style="margin-bottom:6px;">This is not a network problem. The page stopped running its own code, which is why the footer still says "Checking GitHub" and why no data appeared.</div>' +
+        '<div style="font-family:Consolas,monospace;background:#fff;border:1px solid #E5B4B4;border-radius:6px;padding:8px;white-space:pre-wrap;word-break:break-word;">' +
+          String(msg || '(no message)') + (where ? '\n\n' + where : '') + '</div>' +
+        '<div style="margin-top:6px;">Copy the box above and send it over. Most likely causes, in order: the file did not download completely, or an edit introduced a fault. Re-downloading the file is the fastest thing to rule out first.</div>';
+      function attach(){ (document.body || document.documentElement).appendChild(b); }
+      if(document.body) attach(); else document.addEventListener('DOMContentLoaded', attach);
+    }catch(e){}
+  }
+  window.addEventListener('error', function(ev){
+    /* Capture phase catches resource failures too, a blocked CDN script or a
+       missing image. Those carry a target element and no message, and they are
+       not why the app stopped. Reporting one would burn the single shot this
+       banner gets and hide the real fault behind "(no message)". */
+    if(ev && ev.target && ev.target !== window && ev.target.nodeName) return;
+    var msg = ev && (ev.message || (ev.error && ev.error.message));
+    if(!msg) return;
+    var where = '';
+    if(ev && typeof ev.lineno === 'number' && ev.lineno > 0) where = 'at line ' + ev.lineno + ', column ' + ev.colno;
+    if(ev && ev.error && ev.error.stack) where += (where ? '\n' : '') + String(ev.error.stack).split('\n').slice(0,3).join('\n');
+    paint('script error', msg, where);
+  }, true);
+  window.addEventListener('unhandledrejection', function(ev){
+    var r = ev && ev.reason;
+    if(!r) return;
+    paint('unfinished background task', r.message || r, r.stack ? String(r.stack).split('\n').slice(0,3).join('\n') : '');
+  });
+  /* Nothing threw, but the app never started either. A silent stall reads
+     exactly like a network wait on screen, so say which one it is. */
+  window.addEventListener('load', function(){
+    setTimeout(function(){
+      if(shown) return;
+      var f = document.getElementById('githubSyncStatus');
+      if(f && /^Checking GitHub\.\.\.$/.test((f.textContent||'').trim())){
+        paint('startup did not complete', 'The page loaded and no error was raised, but startup never ran. The footer is still showing its original text, so nothing has replaced it.', '');
+      }
+    }, 15000);
+  });
+})();
+</script>
 <style>
 
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -266,6 +346,18 @@ textarea.fi{resize:none;height:60px;line-height:1.4;padding-top:4px;}
 .restbl th{position:sticky;top:0;background:var(--pale);text-align:left;padding:6px 6px;font-size:9.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--navy);cursor:pointer;border-bottom:2px solid var(--bdr);}
 .restbl td{padding:5px 6px;border-bottom:1px solid #EEF0F3;}
 .restbl tr:hover td{background:#F5F8FB;}
+/* ===== Selected row, global design standard 2026-08-20 =====
+   Applies to every table in the console, not one class of table, because the
+   reason for it (tracking one record across a wide row) is the same
+   everywhere. Painted as a translucent inset shadow rather than a background
+   so cells that colour themselves to mean something, such as the yellow ROOM
+   NEEDED cell, tint instead of being overwritten. The first cell also carries
+   a solid left bar as an inset, which costs no layout width, so marking a row
+   never shifts the table by 3px. */
+tr.rowsel > td, tr.rowsel > th{box-shadow:inset 0 0 0 9999px rgba(10,33,88,.07);}
+tr.rowsel > td:first-child, tr.rowsel > th:first-child{box-shadow:inset 3px 0 0 0 var(--nl), inset 0 0 0 9999px rgba(10,33,88,.07);}
+/* Hover must not read as stronger than the row you actually chose. */
+.restbl tr.rowsel:hover td{background:transparent;}
 .rescount{font-size:10.5px;color:var(--mid);padding:8px 0 4px;}
 .restbl tr.expandable{cursor:pointer;}
 .sesstbl{width:100%;border-collapse:collapse;font-size:10.5px;margin:6px 0;}
@@ -309,7 +401,13 @@ textarea.fi{resize:none;height:60px;line-height:1.4;padding-top:4px;}
 .narow{padding:8px 10px;border-bottom:1px solid var(--bdr);font-size:11px;line-height:1.5;}
 .narow strong{color:var(--navy);}
 
-footer.appfoot{flex-shrink:0;border-bottom:1px solid var(--bdr);background:#eceae3;padding:4px 12px;font-size:9.5px;color:var(--mid);font-family:"Courier New",monospace;}
+footer.appfoot{flex-shrink:0;border-bottom:1px solid var(--bdr);background:#eceae3;padding:4px 12px;font-size:9.5px;color:var(--mid);font-family:"Courier New",monospace;display:flex;align-items:flex-start;gap:12px;}
+/* The message can run to several lines. align-items:flex-start keeps the
+   version pinned to the TOP right rather than centred against a tall
+   block, and min-width:0 lets the text column actually wrap instead of
+   forcing the row wider and pushing the version off the edge. */
+footer.appfoot .footmsg{flex:1;min-width:0;}
+footer.appfoot #appVersion{flex:none;font-weight:700;letter-spacing:.03em;white-space:nowrap;}
 
 </style>
 </head>
@@ -337,7 +435,23 @@ footer.appfoot{flex-shrink:0;border-bottom:1px solid var(--bdr);background:#ecea
     <button class="tabbtn" data-tab="data">Branch Admin</button>
   </div>
 
-  <footer class="appfoot">All data lives in this browser's local storage on this device. Course and file naming data syncs with GitHub. <span id="githubSyncStatus">Checking GitHub...</span> <span id="notesAutoSyncStatus" style="margin-left:10px;"></span></footer>
+  <!-- Version moved here 2026-08-20. It started in the Data Backup bar, which
+       turned out to live inside the Branch Admin panel and so was only on
+       screen while that one tab was open. This footer is the only element
+       visible on every screen, which is what the version needs to be, since
+       the question it answers is "which file am I running" and that gets asked
+       from wherever you happen to be.
+
+       The number lives here in the static markup and nowhere else. appVersion()
+       reads it back out of the DOM rather than a second constant holding a
+       copy, because two places holding the same number is how they come to
+       disagree, and a version that lies about its own build is worse than none.
+       Static also means it still shows when the script has died, which is
+       exactly when you most need to identify the file.
+
+       Bump the major and reset the minor on a new feature; bump the minor on a
+       build that only fixes something. -->
+  <footer class="appfoot"><span class="footmsg">All data lives in this browser's local storage on this device. Course and file naming data syncs with GitHub. <span id="githubSyncStatus">Checking GitHub...</span> <span id="notesAutoSyncStatus" style="margin-left:10px;"></span></span><span id="appVersion" title="Console version">v3.0</span></footer>
   <div id="storageWarningBanner" style="display:none;background:var(--red);color:#fff;padding:8px 14px;font-size:11.5px;font-weight:700;flex-shrink:0;">
     <span id="storageWarningText"></span>
     <button id="storageWarningDismiss" style="margin-left:12px;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.5);color:#fff;border-radius:5px;padding:2px 8px;font-size:10px;font-weight:700;cursor:pointer;">Dismiss</button>
@@ -961,6 +1075,11 @@ footer.appfoot{flex-shrink:0;border-bottom:1px solid var(--bdr);background:#ecea
     <div class="genrow"><button class="dbtn" id="ghc_save">Save</button><button class="dbtn secondary" id="ghc_recheck" style="margin-left:8px;">Re-check Storage</button><span class="hint" id="ghc_status" style="display:inline-block;margin-left:8px;"></span></div>
     <div id="ghc_stored" style="margin-top:6px;padding:6px 8px;border:1px solid var(--bdr);border-radius:8px;background:var(--pale);"></div>
 
+    <div class="sh nv" style="margin-top:18px;">Consoles on eddb-shared</div>
+    <div class="hint" style="padding-left:0;">What version of each console is currently sitting in the repo, read from inside the files themselves rather than from their names, since a downloaded file gets renamed and a name can say anything. Check this before pushing so an older build does not land on top of a newer one.</div>
+    <div id="ghc_repo_versions" style="margin-top:4px;padding:6px 8px;border:1px solid var(--bdr);border-radius:8px;background:var(--pale);font-size:10.5px;">Not checked yet.</div>
+    <div class="genrow" style="margin-top:4px;"><button class="dbtn secondary" id="ghc_repo_check">Check Repo Versions</button><span class="hint" id="ghc_repo_status" style="display:inline-block;margin-left:8px;"></span></div>
+
     <div class="sh nv" style="margin-top:18px;">Push File to Repo</div>
     <div class="hint" style="padding-left:0;">For any text file you need available to a new Claude session or to Code without downloading, emailing, and re-uploading: this console, the ISS console, a session handoff doc, anything text-based. Pushes the real file from disk, not this live page's current DOM state (a running single-page app's DOM is not its source file, it's the source plus everything every render function has injected since load). Select the file you actually saved, confirm it's the right one and the destination path looks right, then push. Not for images, PDFs, or other binary files, this reads the file as text.</div>
     <div class="fr"><input type="file" class="fi" id="ghc_push_file" accept=".html,.md,.txt,.json,.csv"></div>
@@ -1185,6 +1304,16 @@ function loadJSON(key, fallback){
    grown. Now returns success/failure and surfaces a real, persistent
    on-screen warning naming the failed key, rather than letting the
    person discover it days later as "my edit reverted for no reason." */
+/* Single reader for the console version. The number itself lives in the
+   #appVersion span in the static HTML and is not duplicated here, so there is
+   only one place to change it and no way for a constant to drift out of step
+   with what is on screen. Anything that needs the version, a filename, a
+   report, a diagnostic, calls this. */
+function appVersion(){
+  const el = document.getElementById('appVersion');
+  const v = el ? String(el.textContent || '').trim().replace(/^v/i, '') : '';
+  return v || 'unknown';
+}
 function saveJSON(key, val){
   try{
     localStorage.setItem(key, JSON.stringify(val));
@@ -1964,6 +2093,21 @@ const SESSION_STATUS_SEED = [
   {id:'ss_seed_20260819_by', category:'open', text:'Answering Mike\'s question directly, the write rights do not yet protect a single source of truth, because there is not one yet. They protect Supabase, which today is a copy rather than the original. Measured: synced_at is null on every row of courses, course_sessions and reference_log, so nothing has ever round tripped. reference_log has one distinct author and a newest row of 14 August, courses a newest of 13 August, and course_sessions moved today only because of the ts_id backfill. The console\'s primary store is still localStorage on Mike\'s own machine, the ISS console has its own, and the QC sweep already found the two console files sharing 26 localStorage keys on the same browser and able to overwrite each other. So there are three stores and the permission work governs one of them. The consequence for the tab plan is specific rather than general: the tabs and the trigger will correctly govern who writes what on the site, but the moment two way sync is live a chief could edit a field in their console that the site would have refused, and the push then either fails in a way that is hard to read or the console quietly keeps a divergent value. The ownership map therefore has to live in one place that the site tab, the database trigger and the console sync all read. Three copies of it is the same failure this project keeps having, arriving one layer higher.', status:null, includedInHandoff:false, logged:'2026-08-19'},
   {id:'ss_seed_20260819_bz', category:'shipped', text:'Weekly Slides preview split into three slides and the first two made collapsible, per Mike. Chief Brief and Upcoming Meetings had been sharing one 1280x720 canvas under the heading Slide 1, Chief Brief and Upcoming Meetings, but they are two whole slides in the real deck. Sharing a frame meant a busy week overflowed a canvas that was never carrying one slide\'s worth of content, so the overflow warning fired and Trim Text was being reached for to solve a layout problem that did not exist. Each now owns its frame and its own overflow measurement. The four quadrant slide is untouched, since Mike called Top 3, Ongoing Events, Branch Chief\'s Concerns and Projected Leave correct as they stand, and it deliberately gets no collapse control because he asked for it on the other two. Collapsed state is remembered per stage across reloads using the console\'s existing bulkwrap and bulktoggle idiom rather than a new one. Stored under its own plain localStorage key rather than in STATE.bcSlides, for two reasons: it is a per-machine view preference with no business travelling through sync, and a new STATE key that is not registered in all three of the LS map, the STATE init and the persist map fails silently.', status:null, includedInHandoff:false, logged:'2026-08-19'},
   {id:'ss_seed_20260819_ca', category:'shipped', text:'Two things worth recording from building the Weekly Slides split, because both were the kind of fault that ships quietly. First, bcsFitStages and bcsWireTrim each carried their own hardcoded list of stage ids, so adding a third slide to one and not the other would have left it either unfittable or untrimmable with no error anywhere. Replaced both with a single BCS_STAGE_IDS constant, and the quadrant fitter now keys off a named BCS_QUAD_STAGE_ID rather than a literal comparison against bcs_s2, which had just become the wrong slide. Second, a collapsed stage is display none, so every measurement inside the fitter reads zero. Left alone it scaled the canvas to nothing, reported Shown at 0 percent, and on the quadrant slide would have shrunk every font to the 16pt floor against a zero height box and then warned that nothing fits. Hidden stages are now skipped and refitted on expand. Verified in a real browser with 19 executed assertions, and the fitter check was confirmed to be a real one by deliberately removing the refit and watching the suite fail: without it an expanded frame sits at 1280px inside a 1252px panel with an empty fit readout. The standing 8 suite regression file still passes.', status:null, includedInHandoff:false, logged:'2026-08-19'},
+  {id:'ss_seed_20260819_cb', category:'shipped', text:'Site Sync sign in now says on screen which account it wants. Mike asked what site he was signing into and had tried his GitHub password, which is a fair mistake to make: the panel had a bare Sign In heading with an email and password box, sitting on a Branch Admin tab whose neighbouring subtab is GitHub Credentials, and nothing anywhere named the account. Heading is now Sign In to eddbpond.com and the hint states in bold that it is the same email and password used to sign in to the site in a browser, and that it is not the GitHub login and not the CAC or network password. The existing assurance that the password is never stored was kept rather than replaced, and it is accurate: ssSignIn posts the password once to the auth endpoint and keeps only the refresh token. Verified by driving the real panel and walking up from the actual password input to the section it sits in, rather than matching the string anywhere in a 2MB file, so the test would fail if the wording were attached to a different login. Confirmed separately against auth.users that the account itself is healthy, password set, email confirmed, not locked, and a successful sign in recorded tonight, so a failure at this box now points at the Project URL and Anon Key above it, which must be saved before sign in will work.', status:null, includedInHandoff:false, logged:'2026-08-19'},
+  {id:'ss_seed_20260819_cc', category:'shipped', text:'Added a boot error reporter, because a console that dies at load has now presented as a network hang twice. When the script stops, the page sits on its static HTML, and the most visible static text is the footer reading Checking GitHub. That looks exactly like a stalled network call and is not one: nothing is being checked, the script stopped. On 2026-08-02 the cause was a syntax error and it took a long detour to find, and it came up again tonight. Devtools are blocked on Mike\'s machine, so there is no console to read the real error from, which is the whole reason it stays invisible. A small self contained script now runs before everything else, catches uncaught errors and rejected promises, and writes the real message with its line and column into a red banner and into the footer. Deliberately dependency free, no STATE and no helpers from the main script, since the entire point is that it has to work when the main script does not. It also reports the different case where nothing threw but startup never ran, which looks identical on screen and means something else entirely.', status:null, includedInHandoff:false, logged:'2026-08-19'},
+  {id:'ss_seed_20260819_cd', category:'shipped', text:'The boot reporter\'s own tests caught two faults in my first version before it shipped, and both would have made it worse than useless. First, listening for errors in the capture phase also catches resource failures, a blocked CDN script or a missing image, which carry a target element and no message. One of those fired first, burned the banner\'s single shot, and printed no message at all, hiding the real syntax error behind an empty box. Now filtered by checking for a target element and requiring a message. Second, this script runs in the head and the footer lives in the body, so on an early failure the footer element does not exist yet and the write was silently dropped, leaving the footer still insisting it was checking GitHub, which is the exact wrong answer. It now holds the message and writes it on DOMContentLoaded. Verified both ways in a real browser: a healthy file raises no banner and still boots to 187 courses, and a deliberately broken copy produces a banner carrying the real SyntaxError, a line number, and a footer that stops claiming a network check. Also added a combined all-blocks strict check to the verification routine, since the file now carries two classic inline scripts and a duplicate top level declaration across two blocks is a runtime error that a per-block check cannot see.', status:null, includedInHandoff:false, logged:'2026-08-19'},
+  {id:'ss_seed_20260819_ce', category:'shipped', text:'Found and fixed the fault that stopped the console loading on Mike\'s machine, and the boot reporter shipped an hour earlier is what named it. Uncaught ReferenceError, QAE_STATUS_RESUBMITTED is not defined, inside a forEach at load. My bug, from yesterday\'s QA status vocabulary work. The constant was declared where the QA feature lives, far down the file, but migrateQaResubmittedStatus runs immediately at load much earlier, and a const is in the temporal dead zone until its own line executes. Reading it from up there is a ReferenceError that halts the entire script before startApp, which is why the page sat on its static footer showing Checking GitHub and no data appeared. Fixed by hoisting the constant and its comparison helper above the migration that needs them, leaving a pointer at the original location so the explanation still sits with the value. The rule this establishes: a load-time migration takes its named values from above itself, never from wherever the feature that owns them happens to live.', status:null, includedInHandoff:false, logged:'2026-08-19'},
+  {id:'ss_seed_20260819_cf', category:'decision', text:'Why this passed every test I ran and still broke on the first real machine, recorded because the reasoning matters more than the fix. Both references to the missing constant sit inside guards that only open when the data they target exists: a dropdown registry still carrying the old spelling, and a stored eval whose status is the old spelling. A console with empty storage never enters either branch, so the constant is never evaluated and nothing throws. Every check I ran, including a browser boot and an upgrade run that carried 106 real localStorage keys forward, was clean, because none of that data included the one value the migration was written to find. Testing a migration without the data it migrates tests nothing. Two things added so this class cannot repeat quietly. A reproduction test that seeds the exact affected state, an eval carrying the old spelling and a registry still offering it, and asserts the fault before the fix and the corrected values in storage after it, ten assertions, and it does reproduce Mike\'s exact error message against the file he ran. And a static check that finds every load-time IIFE reading a const or let declared later in the file: it flags the shipped fault on the broken build and reports clean on the fixed one, across 12 load-time blocks and 234 top level declarations, so this was the only instance.', status:null, includedInHandoff:false, logged:'2026-08-19'},
+  {id:'ss_seed_20260819_cg', category:'decision', text:'My first reproduction test reported the migration half broken and it was the test that was wrong, worth recording since it nearly sent me chasing a second bug that did not exist. It seeded localStorage through Playwright\'s addInitScript, which re-runs in every frame, and the console has a split view iframe on the same file origin. The iframe loaded after the migration had already written, re-applied the seed, and wiped the marker, so a migration that worked correctly looked like one that changed memory and never saved. The tell was that STATE held the new values while localStorage held the old, which is not a shape a persist failure produces. Reseeding by evaluating in the page and reloading gives a clean run. Noting the general form: any test that injects storage before load has to account for every frame the page opens, or it will overwrite the very thing it is checking.', status:null, includedInHandoff:false, logged:'2026-08-19'},
+  {id:'ss_seed_20260820_ch', category:'shipped', text:'Version number added, per Mike, at the right hand end of the grey Data Backup bar, starting at v1.0. There was no prior version record anywhere in the file, so rather than reconstruct one from 493 log entries and present a guess as history, today is the baseline and everything before this is simply unversioned. Scheme as Mike described it: a new feature bumps the major and resets the minor to zero, a build that only fixes something bumps the minor, so 1.0, then 1.1 and 1.2 for fixes, then 2.0 at the next feature. Downloaded files carry it in the name from here on, EDDB_Console_1.0.html. The number itself lives in one place, the static span in the markup, and appVersion() reads it back out of the DOM rather than a second constant holding a copy. Two places holding the same number is how they come to disagree, and a version that lies about which build it is defeats the entire purpose. Keeping it static rather than rendered also means it still shows when the script has died, which is exactly the moment you most need to know which file you are looking at, as tonight demonstrated. Verified by execution, including that the number survives a deliberately broken build and that no second copy of it exists in script.', status:null, includedInHandoff:false, logged:'2026-08-20'},
+  {id:'ss_seed_20260820_ci', category:'openquestion', text:'The grey Data Backup bar sits inside the Branch Admin panel, not in the global chrome, so the version number is only on screen while that tab is open. That is where Mike pointed and it is what was built, but it is worth him deciding, because the reason to have a version at all is answering which file am I running, and that question tends to get asked from whatever tab happens to be open. The footer is the only element visible on every tab. If he wants it everywhere, the clean way is to keep the static span as the one source and mirror it into the footer at startup, which keeps the single source intact and costs only the footer copy being blank in the case where the script has died, where the Branch Admin span still holds the truth.', status:null, includedInHandoff:false, logged:'2026-08-20'},
+  {id:'ss_seed_20260820_cj', category:'shipped', text:'Version moved to the footer, which is the status bar Mike actually meant, the one carrying the local storage and GitHub sync message on every screen. Moved rather than mirrored, so the number still exists in exactly one place and there is no second copy to drift. The footer is now a flex row with the message in a column of its own and the version pinned beside it. Two details that matter and would have looked wrong otherwise: align-items is flex-start so the version sits at the TOP right rather than centred against a message that runs to several lines, and the message column carries min-width zero so it wraps within the row instead of forcing the row wider and pushing the version off the edge. Verified by execution against real geometry rather than by checking the markup: the version is past the midpoint, within 30px of the right edge, top-aligned to the first line of the message, not overlapping the text, and present and non-zero-width on all ten tabs. The earlier open question about it only being visible on Branch Admin is closed by this.', status:null, includedInHandoff:false, logged:'2026-08-20'},
+  {id:'ss_seed_20260820_ck', category:'shipped', text:'Row highlight is now a design standard across every table in the console, per Mike: clicking anywhere in a row marks it so the eye can carry one record across a wide row, whether the click was to edit a field or just to look. Delegated from the document rather than wired per table, because almost every table here is rebuilt by a render function and anything bound to the rows themselves would have to be re-bound by all of them, with the one that forgot being the one that quietly stopped working. Delegation also covers tables that do not exist yet, which is most of them. Deliberately passive, it never calls preventDefault or stopPropagation and only touches a class, so every existing row handler, expander, input and select behaves exactly as before. Scoped per table so a row marked in one survives while another is read beside it. Painted as a translucent inset shadow rather than a background, because some cells colour themselves to mean something, the yellow ROOM NEEDED cell being the obvious one, and a background rule would erase that signal. The left bar is also an inset, so marking a row costs no layout width and never shifts the table.', status:null, includedInHandoff:false, logged:'2026-08-20'},
+  {id:'ss_seed_20260820_cl', category:'shipped', text:'The row highlight needed a second half that was not obvious until it was tested. Several rows are their own control: clicking a name on Personnel > Team expands it, which re-runs the whole render and discards the node that was just marked, so the highlight appeared and vanished in the same frame on precisely the table Mike named. The mark is now re-applied on the next tick when the original row is gone, matched on the first cell\'s text, which is the human identity of the row, falling back to position when that text has changed. Verified across every tab by clicking a real row in each table and measuring after the render settles, and confirmed the check is worth something by disabling the restore and watching the Personnel table alone drop out, 3 of 4 instead of 4 of 4. Also asserted that header rows stay unmarkable, that only one row is marked per table, that marking a row in one table leaves another table\'s mark alone, and that a select inside a row still changes value and still marks its row.', status:null, includedInHandoff:false, logged:'2026-08-20'},
+  {id:'ss_seed_20260820_cm', category:'shipped', text:'Fixed the Personnel > Team next check-in date not updating, reported by Mike, and found a worse bug hiding behind it. Two places hold the answer to when the next check-in is. The calendar layer updates the check-in log, which is why this looks correct whenever no check-in is in progress, but issCheckInNextFor reads the in-progress draft FIRST and only falls back to the log, and ciCommitNextCheckIn was not updating the draft. So for any ISS with an open check-in draft, the normal state once one has been started on the ISS Check-In tab, the saved date was written everywhere except the field the screen actually reads. The invisible half is the real damage: issCheckInNextEventFor locates the calendar record by that same stale date, so a second edit found nothing to update and created a duplicate Next Check-In event beside the first. Measured before the fix with a draft present, two events after two edits and the row still showing the original date; after the fix, one event and the current date. My first reproduction passed because it had no draft, which is exactly the condition that hides this, so the test now seeds one. Any duplicate Next Check-In events already in the calendar predate this fix and need clearing by hand.', status:null, includedInHandoff:false, logged:'2026-08-20'},
+  {id:'ss_seed_20260820_cn', category:'shipped', text:'Version numbering added to the ISS console, on its own line starting at v1.0 rather than sharing the BC console\'s number, because the two ship independently and a shared number would imply a relationship that does not exist. Same treatment as the BC console: the number lives in the footer markup and nowhere else, appVersion reads it back out of the DOM rather than a second constant holding a copy, and it stays visible when the script has died. Giving both files identical markup for it is what lets one extractor read either of them, which is what the repo panel below depends on.', status:null, includedInHandoff:false, logged:'2026-08-20'},
+  {id:'ss_seed_20260820_co', category:'shipped', text:'New panel on Branch Admin > GitHub Credentials, Consoles on eddb-shared, reporting what version of each console is actually sitting in the repo. Per Mike, the number has to come from inside the file rather than from its name, because he renames the file after downloading it, so the name is a label he chose and proves nothing. The number in the markup was written by whoever built the file and is the only trustworthy statement of what it is. Reads the raw file unauthenticated, since eddb-shared is public, so it works before the push token has been entered, which is the state someone is most likely to be in when they want to know what is already up there. Deliberately not the GitHub contents API, which caps near 1 MB and would return a placeholder for a 2 MB console rather than the file. The panel also states what the running console is, because the comparison is the whole point: it answers whether what you are running is newer than what is up there without reading two numbers off two screens.', status:null, includedInHandoff:false, logged:'2026-08-20'},
+  {id:'ss_seed_20260820_cp', category:'shipped', text:'The file picker now reports the version of the file selected for push, read from its bytes before upload. This closes the actual hazard, which is pushing an older build over a newer one and not finding out until someone downloads it. With the repo panel above it, both numbers are on screen at the same moment, so overwriting a newer file becomes a visible choice rather than an accident. Verified with intercepted responses rather than against whatever happens to be on GitHub, covering all four states: both consoles versioned, a repo copy that predates versioning, a console absent from the repo, and a version read correctly out of content whose filename says something different. Also asserted the credentials panel\'s own missing-element guard stays clean after three new ids were added to it, since that guard fails loudly by design and would have caught a mismatch.', status:null, includedInHandoff:false, logged:'2026-08-20'},
 ];
 function mergeSessionStatusSeed(){
   const localIds = new Set(STATE.sessionStatus.map(r=>r.id));
@@ -3749,6 +3893,25 @@ function tcfgMoveChildTab(section, key, direction){
 
    Marker-guarded so a later deliberate edit sticks, and old-value-guarded
    so an option Mike has renamed himself is left alone. */
+/* Hoisted above migrateQaResubmittedStatus on 2026-08-19 after it threw on
+   Mike's machine and nowhere else. const is in the temporal dead zone until
+   its own line executes, and this migration runs immediately at load, far
+   earlier in the file, so reading the constant from inside it was a
+   ReferenceError that halted the entire script before startApp.
+
+   It survived testing because the two references sit inside guards that only
+   open when the data they target exists: a dropdown registry still carrying
+   the old spelling, and a stored eval whose status is the old spelling. A
+   console with empty storage never enters either branch, so the constant is
+   never evaluated and nothing throws. Only a real install with a real
+   affected record reaches it. Any future load-time migration that needs a
+   named value must take it from above this line, not from where the feature
+   that owns it happens to live. */
+const QAE_STATUS_RESUBMITTED = 'Resubmitted to QA';
+function qaeIsResubmitted(s){
+  const v = String(s||'').trim();
+  return v === QAE_STATUS_RESUBMITTED || v === 'Resubmitted';
+}
 (function migrateQaResubmittedStatus(){
   const MARK = 'eddb_console_migrate_qa_resubmitted_2026_08_19';
   try{ if(localStorage.getItem(MARK)) return; }catch(e){ return; }
@@ -6247,11 +6410,9 @@ function qaeStatusColorMap(){
    aligning the other way would need a data migration there as well as
    here. Comparisons go through qaeIsResubmitted so a record saved under
    the old spelling on another device still renders correctly. */
-const QAE_STATUS_RESUBMITTED = 'Resubmitted to QA';
-function qaeIsResubmitted(s){
-  const v = String(s||'').trim();
-  return v === QAE_STATUS_RESUBMITTED || v === 'Resubmitted';
-}
+/* Declared above, before the migrations, because a load-time migration
+   reads it. Kept here as a pointer so the explanation above still sits with
+   the value it explains. See the QA status vocabulary block near the top. */
   return {
     'Scheduled':'var(--mid)', 'BC Rev Scheduled':'var(--nl)', 'Resubmitted to QA':'#B8860B',
     'Resubmitted':'#B8860B',   /* pre-2026-08-19 spelling, kept so old records still colour */
@@ -7449,6 +7610,29 @@ function ciCommitNextCheckIn(name, date, time){
     rec = calAddEvent({date:date, time:time||'', title:'Next Check-In, '+name, kind:'checkin', issName:name});
     const res = calWriteEventNote(rec);
     if(res && res.ref) calUpdateEvent(rec.id, {ref:res.ref});
+  }
+  /* Fixed 2026-08-20, reported by Mike: saving a new next check-in on
+     Personnel > Team left the date beside the ISS showing the old one.
+
+     Two places hold the answer to "when is the next check-in". The calendar
+     layer updates the check-in log, which is why this looks correct as soon
+     as no check-in is in progress. But issCheckInNextFor reads the in-progress
+     draft FIRST and only falls back to the log, and nothing here was updating
+     the draft. So for any ISS with an open check-in draft, which is the normal
+     state once one has been started on the ISS Check-In tab, the saved date
+     was written everywhere except the field the screen actually reads.
+
+     The invisible half was worse. issCheckInNextEventFor locates the calendar
+     record by that same stale date, so the second edit found nothing to update
+     and created a duplicate Next Check-In event alongside the first. Measured
+     before this fix: two events after two edits, and the row still showing the
+     original date. Any existing duplicates predate this and need clearing by
+     hand from the calendar. */
+  const draft = (STATE.issCheckIn || {})[name];
+  if(draft){
+    draft.nextCheckInDate = date;
+    if(time) draft.nextCheckInTime = time;
+    persist('issCheckIn');
   }
   return rec;
 }
@@ -26441,8 +26625,8 @@ function renderSiteSync(){
       '<button class="dbtn secondary" id="ss_diag" style="margin-left:8px;">Diagnose</button>' +
       ' <span class="hint" id="ss_cfg_status" style="display:inline-block;margin-left:6px;"></span></div>' +
     '<div class="outputs" id="ss_diag_out" style="display:none;">'+outBlockHTML('ss_out_diag','Connection Diagnostic')+'</div>' +
-    '<div class="sh nv" style="margin-top:12px;">Sign In</div>' +
-    '<div class="hint" style="padding-left:0;">Your password is never stored. Signing in keeps only a refresh token, which is scoped to your account and can be revoked from the site.</div>' +
+    '<div class="sh nv" style="margin-top:12px;">Sign In to eddbpond.com</div>' +
+    '<div class="hint" style="padding-left:0;"><b>This is your eddbpond.com login, the same email and password you use to sign in to the site in a browser. It is not your GitHub login and not your CAC or network password.</b> Your password is never stored. Signing in keeps only a refresh token, which is scoped to your account and can be revoked from the site.</div>' +
     '<div class="fr"><div class="lb">Email</div><input type="text" class="fi" id="ss_email" value="'+escapeHtml(c.email)+'" style="max-width:260px;"></div>' +
     '<div class="fr"><div class="lb">Password</div><input type="password" class="fi" id="ss_pw" style="max-width:260px;" autocomplete="off"></div>' +
     '<div class="genrow"><button class="dbtn" id="ss_signin">Sign In</button>' +
@@ -26754,7 +26938,7 @@ function initGithubCredentials(){
      clicking Save would do nothing, silently, which matches every symptom
      Mike reported. Now the elements are checked first and a missing one is
      reported on screen instead of killing the wiring. */
-  const need = ['ghc_main','ghc_request','ghc_notes','ghc_shared','ghc_save','ghcreds_warn','ghc_stored','ghc_push_file','ghc_push_path','ghc_push_btn','ghc_push_msg','ghc_push_status','ghc_push_fileinfo'];
+  const need = ['ghc_main','ghc_request','ghc_notes','ghc_shared','ghc_save','ghcreds_warn','ghc_stored','ghc_push_file','ghc_push_path','ghc_push_btn','ghc_push_msg','ghc_push_status','ghc_push_fileinfo','ghc_repo_versions','ghc_repo_check','ghc_repo_status'];
   const missing = need.filter(id=>!document.getElementById(id));
   if(missing.length){
     const w = document.getElementById('ghcreds_warn') || document.getElementById('ghc_status');
@@ -26840,6 +27024,66 @@ function initGithubCredentials(){
      separately) covers the console, the ISS console, and any handoff doc
      Mike wants a new session or Code to read directly. The underlying
      push function was always generic, only the UI was console-specific. */
+  /* Reads the version out of a console file's TEXT rather than its name.
+     Mike renames the file after downloading it, so the name is a label he
+     chose and not evidence of anything. The number in the markup came from
+     whoever built the file and is the only trustworthy statement of what it
+     actually is. Matches the #appVersion span in both consoles, which is why
+     both were given the same markup. */
+  function ghcExtractVersion(text){
+    const m = /id="appVersion"[^>]*>\s*v?([0-9]+\.[0-9]+)\s*</i.exec(String(text||''));
+    return m ? m[1] : null;
+  }
+  const GHC_TRACKED_CONSOLES = [
+    {label:'EDDB Console',     path:'console/EDDB_Console.html'},
+    {label:'EDDB ISS Console', path:'console/EDDB_ISS_Console.html'}
+  ];
+  /* Unauthenticated raw read. eddb-shared is public, so no token is needed
+     and this works even before the push token has been entered, which is the
+     state someone is most likely to be in when they want to know what is
+     already up there. Deliberately not the contents API, which caps around
+     1 MB and would return a placeholder for a 2 MB console instead of the
+     file. Cache-busted, because a stale answer here is worse than none. */
+  async function ghcFetchRepoVersion(path){
+    const url = 'https://raw.githubusercontent.com/'+SHARED_OWNER+'/'+SHARED_REPO+'/'+SHARED_BRANCH+'/'+path+'?t='+Date.now();
+    const resp = await fetch(url, {cache:'no-store'});
+    if(resp.status === 404) return {state:'missing'};
+    if(!resp.ok) return {state:'error', detail:'HTTP '+resp.status};
+    const text = await resp.text();
+    const v = ghcExtractVersion(text);
+    return v ? {state:'ok', version:v, bytes:text.length}
+             : {state:'unversioned', bytes:text.length};
+  }
+  async function ghcCheckRepoVersions(){
+    const box = document.getElementById('ghc_repo_versions');
+    const st = document.getElementById('ghc_repo_status');
+    if(!box) return;
+    if(st){ st.style.color = 'var(--mid)'; st.textContent = 'Checking...'; }
+    const rows = [];
+    for(const c of GHC_TRACKED_CONSOLES){
+      let r;
+      try{ r = await ghcFetchRepoVersion(c.path); }
+      catch(e){ r = {state:'error', detail:'could not reach GitHub'}; }
+      let txt, color = 'var(--sl)';
+      if(r.state === 'ok') txt = 'v'+r.version+'  ('+(r.bytes/1048576).toFixed(2)+' MB)';
+      else if(r.state === 'missing'){ txt = 'not in the repo'; color = 'var(--amb)'; }
+      else if(r.state === 'unversioned'){ txt = 'no version in the file, predates 20 Aug 2026'; color = 'var(--amb)'; }
+      else { txt = r.detail || 'could not read'; color = 'var(--red)'; }
+      rows.push('<div style="display:flex;gap:8px;padding:2px 0;"><span style="flex:none;min-width:150px;font-weight:700;">'+escapeHtml(c.label)+'</span>' +
+                '<span style="color:'+color+';">'+escapeHtml(txt)+'</span>' +
+                '<span style="flex:1;text-align:right;color:var(--mid);">'+escapeHtml(c.path)+'</span></div>');
+    }
+    /* This console knows its own version for certain, so show it next to the
+       repo's. The comparison is the whole point: it answers "is what I am
+       running newer than what is up there" without reading two numbers off
+       two different screens. */
+    rows.push('<div style="margin-top:5px;padding-top:5px;border-top:1px solid var(--bdr);color:var(--mid);">This console is running v'+escapeHtml(appVersion())+'.</div>');
+    box.innerHTML = rows.join('');
+    if(st){ st.style.color = 'var(--mid)'; st.textContent = 'Checked just now.'; }
+  }
+  const repoCheckBtn = document.getElementById('ghc_repo_check');
+  if(repoCheckBtn) repoCheckBtn.addEventListener('click', ghcCheckRepoVersions);
+
   let ghcPushSelectedFile = null;
 
   /* A guess, not a rule, the path field stays fully editable regardless.
@@ -26877,6 +27121,24 @@ function initGithubCredentials(){
   if(fileInput) fileInput.addEventListener('change', (e)=>{
     ghcPushSelectedFile = (e.target.files && e.target.files[0]) || null;
     refreshPushButtonState();
+    /* Read the version out of the file actually selected. The filename is
+       whatever Mike renamed it to and proves nothing, so the number is taken
+       from the bytes about to be uploaded. Shown next to the repo's current
+       version so pushing an older build over a newer one is a visible choice
+       rather than an accident. */
+    if(ghcPushSelectedFile && /\.html?$/i.test(ghcPushSelectedFile.name)){
+      const fr = new FileReader();
+      fr.onload = ()=>{
+        const v = ghcExtractVersion(fr.result);
+        const info = document.getElementById('ghc_push_fileinfo');
+        if(!info || ghcPushSelectedFile !== (e.target.files && e.target.files[0])) return;
+        info.textContent += v
+          ? ' This file reports v' + v + '.'
+          : ' This file carries no version, so it predates 20 Aug 2026.';
+      };
+      fr.onerror = ()=>{};
+      fr.readAsText(ghcPushSelectedFile);
+    }
   });
   const pathInputEl = document.getElementById('ghc_push_path');
   if(pathInputEl) pathInputEl.addEventListener('input', ()=>{
@@ -28020,6 +28282,88 @@ function wireSplitViewControls(){
 }
 if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wireSplitViewControls);
 else wireSplitViewControls();
+
+/* Row highlight, a design standard as of 2026-08-20 per Mike: clicking
+   anywhere in a table row marks it, so the eye can track one record across a
+   wide row whether the click was to edit a field or just to look.
+
+   Delegated from the document rather than wired per table. Almost every table
+   here is rebuilt by a render function, so anything bound to the rows
+   themselves would have to be re-bound by all of them, and the one that
+   forgot would be the one that quietly stopped working. Delegation covers
+   tables that do not exist yet, which is most of them.
+
+   Deliberately passive. It never calls preventDefault or stopPropagation and
+   never touches anything but a class, so every existing row handler, expander,
+   input and select behaves exactly as it did before.
+
+   Scoped per table: a click clears the mark only within its own table, so a
+   row you marked in one table survives while you read another beside it.
+
+   The paint is an inset shadow rather than a background, because some cells
+   set their own background to mean something, the yellow ROOM NEEDED cell on
+   the meetings table being the obvious one. A background rule would erase that
+   signal. A translucent inset tints over it and leaves it legible. */
+/* Nearest ancestor carrying an id, used to find the same table again after a
+   render has replaced it. The table element itself usually has no id here;
+   the tbody or the panel around it does. */
+function rhAnchorId(el){
+  let n = el;
+  while(n && !n.id) n = n.parentElement;
+  return n ? n.id : null;
+}
+function rhRowKey(row){
+  const cell = row ? row.querySelector('td') : null;
+  const t = cell ? String(cell.textContent || '').trim().slice(0, 80) : '';
+  return t || null;
+}
+function rhMark(table, row){
+  table.querySelectorAll('tr.rowsel').forEach(r=>{ if(r !== row) r.classList.remove('rowsel'); });
+  row.classList.add('rowsel');
+}
+/* Restores the mark after a click that rebuilt the table underneath it.
+   Several rows here are their own control: clicking a name on Personnel >
+   Team expands it, which re-runs the whole render and throws away the node
+   that was just marked. Without this the highlight appears and vanishes in
+   the same frame, precisely on the tables where it is most wanted. Matched on
+   the first cell's text, which is the human identity of the row, and falling
+   back to position when that text has changed. */
+function rhRestore(anchorId, key, idx){
+  if(!anchorId) return;
+  const anchor = document.getElementById(anchorId);
+  if(!anchor) return;
+  const table = anchor.tagName === 'TABLE' ? anchor : anchor.closest('table') || anchor.querySelector('table');
+  if(!table || table.querySelector('tr.rowsel')) return;
+  const rows = Array.from(table.querySelectorAll('tr')).filter(r=>r.querySelector('td'));
+  let row = key ? rows.find(r=>rhRowKey(r) === key) : null;
+  if(!row && idx > -1) row = rows[idx];
+  if(row) rhMark(table, row);
+}
+function wireRowHighlight(){
+  if(document.body.dataset.rowHiWired) return;
+  document.body.dataset.rowHiWired = '1';
+  document.addEventListener('click', function(ev){
+    const cell = ev.target && ev.target.closest ? ev.target.closest('td,th') : null;
+    if(!cell) return;
+    const row = cell.parentElement;
+    if(!row || row.tagName !== 'TR') return;
+    const table = row.closest('table');
+    if(!table) return;
+    /* A header row is a control, not a record. Marking it is meaningless and
+       the sort headers already have their own affordance. */
+    if(row.closest('thead') || !row.querySelector('td')) return;
+    rhMark(table, row);
+    const anchorId = rhAnchorId(table);
+    const key = rhRowKey(row);
+    const idx = Array.from(table.querySelectorAll('tr')).filter(r=>r.querySelector('td')).indexOf(row);
+    /* Runs after the click's own handlers, so if one of them re-rendered the
+       table this puts the mark back on the row that replaced it. If nothing
+       re-rendered, the mark is already there and this does nothing. */
+    setTimeout(function(){ if(!row.isConnected) rhRestore(anchorId, key, idx); }, 0);
+  }, true);
+}
+if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wireRowHighlight);
+else wireRowHighlight();
 
 // Parent side: answer a child's request for a live data snapshot, and
 // apply whatever the child later persists back through the real,

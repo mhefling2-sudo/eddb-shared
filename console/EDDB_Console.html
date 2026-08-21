@@ -451,10 +451,22 @@ footer.appfoot #appVersion{flex:none;font-weight:700;letter-spacing:.03em;white-
 
        Bump the major and reset the minor on a new feature; bump the minor on a
        build that only fixes something. -->
-  <footer class="appfoot"><span class="footmsg">All data lives in this browser's local storage on this device. Course and file naming data syncs with GitHub. <span id="githubSyncStatus">Checking GitHub...</span> <span id="notesAutoSyncStatus" style="margin-left:10px;"></span></span><span id="appVersion" title="Console version">v4.1</span></footer>
+  <footer class="appfoot"><span class="footmsg">All data lives in this browser's local storage on this device. Course and file naming data syncs with GitHub. <span id="githubSyncStatus">Checking GitHub...</span> <span id="notesAutoSyncStatus" style="margin-left:10px;"></span></span><span id="appVersion" title="Console version">v5.0</span></footer>
   <div id="storageWarningBanner" style="display:none;background:var(--red);color:#fff;padding:8px 14px;font-size:11.5px;font-weight:700;flex-shrink:0;">
     <span id="storageWarningText"></span>
     <button id="storageWarningDismiss" style="margin-left:12px;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.5);color:#fff;border-radius:5px;padding:2px 8px;font-size:10px;font-weight:700;cursor:pointer;">Dismiss</button>
+  </div>
+  <!-- Repo freshness banner, added 2026-08-21. This console cannot push itself:
+       a page served from file:// cannot read its own bytes (fetch and XHR on
+       file:// are both blocked), and document.outerHTML is the source plus
+       everything every render function has injected, measured at 22.6% larger
+       than the real file on a booted console. So the push stays a deliberate
+       act on a real file, and what gets automated is NOTICING that the repo is
+       behind, which is the part that actually failed. -->
+  <div id="repoBehindBanner" style="display:none;background:var(--amb);color:#2A1D00;padding:8px 14px;font-size:11.5px;font-weight:700;flex-shrink:0;">
+    <span id="repoBehindText"></span>
+    <button id="repoBehindPush" style="margin-left:12px;background:rgba(0,0,0,.12);border:1px solid rgba(0,0,0,.35);color:#2A1D00;border-radius:5px;padding:2px 8px;font-size:10px;font-weight:700;cursor:pointer;">Push it now</button>
+    <button id="repoBehindDismiss" style="margin-left:6px;background:rgba(0,0,0,.06);border:1px solid rgba(0,0,0,.25);color:#2A1D00;border-radius:5px;padding:2px 8px;font-size:10px;font-weight:700;cursor:pointer;">Not now</button>
   </div>
 
 <div class="fr" style="background:#EBF3FB;border-bottom:2px solid var(--navy);flex-shrink:0;">
@@ -2131,6 +2143,10 @@ const SESSION_STATUS_SEED = [
   {id:'ss_seed_20260821_t', category:'decision', text:'Stacey English and Elizabeth Dale confirmed by Mike as real, the last two people in LAB, the Leadership Academy Branch, which is being phased out. Elizabeth had no role_id at all, which made her invisible to every chief on the site including Mike; she now carries the same EDDB ISS role Stacey already had, so the two are consistent and both resolve to the EDDB chief. Deliberately did NOT create a LAB branch. A branch that is closing would need creating, populating and then deleting, and the moment it existed both people would scope to it and disappear from Mike\'s view on the site, which is a regression caused by tidiness. The free-text branch field still reads LAB on both records, so the association is not lost. If LAB outlives its phase-out or ever needs its own chief, it becomes a real branch then.', status:null, includedInHandoff:false, logged:'2026-08-21'},
   {id:'ss_seed_20260821_u', category:'decision', text:'api.github.com is reachable from the build sandbox after all. The 2026-08-19 finding that it was blocked by the egress allowlist, recorded as a lesson about running an unauthenticated baseline before concluding a credential is dead, does not reproduce today: an unauthenticated request returns 200 and git ls-remote against the repo succeeds. Either the allowlist changed or the original diagnosis conflated an authenticated 403 with an unreachable host. Worth correcting in the record rather than leaving a false constraint in place, because it is the kind of note that quietly rules out an option months later. It also means pushing a shipped console straight to eddb-shared from the build session is technically possible, given a token, which is what Mike asked about.', status:null, includedInHandoff:false, logged:'2026-08-21'},
   {id:'ss_seed_20260821_v', category:'openquestion', text:'Whether the build session should push each shipped console to eddb-shared automatically. Mike asked for it, and it would have prevented today\'s rebuild, where the repo held v3.0 while he was running v3.1 and the 3.1 log entries had to be reconstructed. It needs a token in the session, which means the credential lives in the conversation transcript. Recommended shape if it goes ahead: a fine-grained PAT scoped to contents write on eddb-shared alone, nothing else, separate from the existing console-push-eddb-shared token so it can be revoked without breaking the console\'s own push button. Mike\'s call, and worth noting the alternative is free: pushing from the console after each build closes the same gap with no new credential anywhere.', status:'Open', includedInHandoff:false, logged:'2026-08-21'},
+  {id:'ss_seed_20260821_w', category:'decision', text:'Mike asked for the console to push itself to eddb-shared on open, keeping the manual button for the ISS console. It cannot, and the reason is structural rather than a missing feature, so it was measured rather than asserted. Probed a file:// page in real Chromium: fetch(location.href) fails and a synchronous XHR against it fails, so a console opened from disk has no way to read the bytes it was loaded from. The only other candidate, document.outerHTML, is not the source file, it is the source plus everything every render function has injected; measured on a booted v4.1 at 2,923,094 bytes against a real file of 2,384,060, which is 22.6 percent larger, and each push-reparse-push cycle would compound that. Pushing either way would put something in the repo that is not the file. The file picker stays, and it stays reading real bytes through FileReader.', status:null, includedInHandoff:false, logged:'2026-08-21'},
+  {id:'ss_seed_20260821_x', category:'shipped', text:'What failed on 21 August was not the pushing, it was the noticing: v4.1 shipped, was never pushed, and the repo sat on v3.0 while a session was told it was current. So the noticing is what got automated. On boot the console reads the version out of console/EDDB_Console.html on eddb-shared, unauthenticated since the repo is public, compares it to its own #appVersion, and shows an amber banner only when the repo is genuinely behind. Push it now closes the banner, lands on Data > GitHub Credentials, and pre-fills the destination path to console/EDDB_Console.html. That pre-fill is the point as much as the banner is: the path field otherwise guesses from the filename, so pushing EDDB_Console_5.0.html would create a second console at a new path and leave the repo holding two. The one route that exists to fix a stale repo should not be able to make a worse mess.', status:null, includedInHandoff:false, logged:'2026-08-21'},
+  {id:'ss_seed_20260821_y', category:'decision', text:'Three deliberate choices in the freshness check, each one a way it could have been annoying or wrong. It stays completely silent when GitHub is unreachable, because this is a convenience and a console that cannot reach the network should still open without an alarming banner about it; a 500, a timeout and a hard abort all produce nothing. Not now is recorded against the version that raised it rather than as a permanent flag, so dismissing it for v5.0 does not also silence v5.1, which is a different fact about a different build. And the comparison is numeric per component rather than a string compare, because a string compare calls v4.10 older than v4.9 and that would have gone unnoticed for months. Also hoisted ghcExtractVersion, ghcFetchRepoVersion and GHC_TRACKED_CONSOLES out of initGithubCredentials to module scope so the boot check and the Credentials panel answer what version is in the repo through one function, not two copies.', status:null, includedInHandoff:false, logged:'2026-08-21'},
+  {id:'ss_seed_20260821_z', category:'shipped', text:'Verified the freshness banner by driving the real console in real Chromium, 27 assertions, with every outbound request except the one under test deliberately aborted so the result cannot depend on the sandbox having connectivity. Covered: repo behind shows the banner naming both versions, repo level or ahead shows nothing, a missing file and an unversioned file each warn with their own wording, an abort and a 500 both stay silent and throw nothing, Not now survives a reload for the same version but not for a different one, and Push it now closes the banner, activates the Data tab and the GitHub Credentials subtab, and leaves the destination path reading console/EDDB_Console.html. Four deliberate breaks all caught. One of those breaks initially reported NOT CAUGHT and the test was right: the break script had anchored on a string appearing six times in the file and had patched an unrelated catch block, so nothing under test had actually changed. Anchoring a break on a non-unique string tests nothing, exactly like anchoring a test on one.', status:null, includedInHandoff:false, logged:'2026-08-21'},
 ];
 function mergeSessionStatusSeed(){
   const localIds = new Set(STATE.sessionStatus.map(r=>r.id));
@@ -4516,6 +4532,130 @@ async function pushPrivateJSONFile(path, obj, commitMessage){
 const SHARED_OWNER = 'mhefling2-sudo';
 const SHARED_REPO = 'eddb-shared';
 const SHARED_BRANCH = 'main';
+/* Reads the version out of a console file's TEXT rather than its name. Mike
+   renames the file after downloading it, so the name is a label he chose and
+   not evidence of anything. The number in the markup came from whoever built
+   the file and is the only trustworthy statement of what it actually is.
+
+   Module scope as of 2026-08-21: the GitHub Credentials panel and the boot
+   check both need this answer, and two copies of "what version is in the repo"
+   is precisely the shape of every silent divergence this project has had. */
+function ghcExtractVersion(text){
+  const m = /id="appVersion"[^>]*>\s*v?([0-9]+\.[0-9]+)\s*</i.exec(String(text||''));
+  return m ? m[1] : null;
+}
+const GHC_TRACKED_CONSOLES = [
+  {label:'EDDB Console',     path:'console/EDDB_Console.html'},
+  {label:'EDDB ISS Console', path:'console/EDDB_ISS_Console.html'}
+];
+/* Unauthenticated raw read. eddb-shared is public, so no token is needed and
+   this works before the push token has been entered, which is the state
+   someone is most likely to be in when they want to know what is up there.
+   Deliberately not the contents API, which caps around 1 MB and would return a
+   placeholder for a 2 MB console instead of the file. Cache-busted, because a
+   stale answer here is worse than none. */
+async function ghcFetchRepoVersion(path){
+  const url = 'https://raw.githubusercontent.com/'+SHARED_OWNER+'/'+SHARED_REPO+'/'+SHARED_BRANCH+'/'+path+'?t='+Date.now();
+  const resp = await fetch(url, {cache:'no-store'});
+  if(resp.status === 404) return {state:'missing'};
+  if(!resp.ok) return {state:'error', detail:'HTTP '+resp.status};
+  const text = await resp.text();
+  const v = ghcExtractVersion(text);
+  return v ? {state:'ok', version:v, bytes:text.length}
+           : {state:'unversioned', bytes:text.length};
+}
+/* Compares two "4.1" style versions numerically. String compare would call
+   v4.10 older than v4.9, which is wrong and would go unnoticed for months. */
+function ghcVersionCmp(a, b){
+  const pa = String(a||'').split('.').map(Number);
+  const pb = String(b||'').split('.').map(Number);
+  for(let i=0;i<Math.max(pa.length, pb.length);i++){
+    const x = pa[i]||0, y = pb[i]||0;
+    if(x !== y) return x < y ? -1 : 1;
+  }
+  return 0;
+}
+/* Boot check: is eddb-shared holding an older BC console than the one running?
+
+   Mike asked for the console to push itself on open. It cannot, and the reason
+   is structural rather than a missing feature:
+
+     - fetch() and XMLHttpRequest against location.href both fail on a file://
+       page, verified by execution in Chromium, so the running console has no
+       way to read the bytes it was loaded from.
+     - document.outerHTML is not the source file. Measured on a booted v4.1:
+       real file 2,384,060 bytes, outerHTML 2,923,094 bytes, 22.6% larger.
+       That difference is every table row and panel the render functions have
+       injected. Pushing it would put a file in the repo that is not the file,
+       and each round trip would compound.
+
+   What actually failed on 21 August was not the pushing, it was the noticing:
+   a build shipped, was never pushed, and the next session silently started
+   from a version behind. So this automates the noticing. One click from here
+   lands on the push panel with the destination path already correct.
+
+   Deliberately scoped to the BC console only. The ISS console stays a manual
+   push, per Mike, and it cannot go to this repo anyway while it carries a
+   hardcoded token in source.
+
+   Failure is silent by design. This is a convenience, and a console that
+   cannot reach GitHub should still open without an alarming banner about it. */
+const REPO_BEHIND_DISMISS_KEY = 'eddb_console_repobehind_dismissed_v1';
+async function checkConsoleRepoFreshness(){
+  const banner = document.getElementById('repoBehindBanner');
+  if(!banner) return;
+  const mine = appVersion();
+  if(!mine || mine === 'unknown') return;
+  /* Dismissal is per version, not forever. Saying "not now" about v4.1 must
+     not also suppress the warning for v4.2, which is a different fact. */
+  try{
+    if(localStorage.getItem(REPO_BEHIND_DISMISS_KEY) === mine) return;
+  }catch(e){}
+
+  let r;
+  try{ r = await ghcFetchRepoVersion('console/EDDB_Console.html'); }
+  catch(e){ return; }
+
+  let msg = null;
+  if(r.state === 'ok' && ghcVersionCmp(r.version, mine) < 0){
+    msg = 'eddb-shared is holding v'+r.version+'. You are running v'+mine+
+          '. The next session will start from the older one until this is pushed.';
+  }else if(r.state === 'missing'){
+    msg = 'eddb-shared has no BC console at console/EDDB_Console.html. You are running v'+mine+'.';
+  }else if(r.state === 'unversioned'){
+    msg = 'The console in eddb-shared carries no version number, so it predates 20 Aug 2026. You are running v'+mine+'.';
+  }
+  if(!msg) return;   // repo is level or ahead, or unreachable: say nothing
+
+  document.getElementById('repoBehindText').textContent = msg;
+  banner.style.display = 'block';
+
+  document.getElementById('repoBehindDismiss').onclick = ()=>{
+    banner.style.display = 'none';
+    try{ localStorage.setItem(REPO_BEHIND_DISMISS_KEY, mine); }catch(e){}
+  };
+  document.getElementById('repoBehindPush').onclick = ()=>{
+    banner.style.display = 'none';
+    drGoToTab('data');
+    /* Let the Data tab render before reaching into its subtab, then pre-fill
+       the destination path. That path is the trap: it pre-fills from the
+       chosen filename, so EDDB_Console_4.1.html would land at a brand new
+       path and leave the repo holding two consoles. Setting it here means the
+       one route that exists to fix a stale repo cannot itself create a mess. */
+    setTimeout(()=>{
+      const sub = document.querySelector('#dataSubbar .subbtn[data-dsub="ghcreds"]');
+      if(sub) sub.click();
+      setTimeout(()=>{
+        const pathEl = document.getElementById('ghc_push_path');
+        if(pathEl) pathEl.value = 'console/EDDB_Console.html';
+        const msgEl = document.getElementById('ghc_push_msg');
+        if(msgEl && !msgEl.value) msgEl.value = 'Update EDDB_Console.html from console, v'+mine;
+        const panel = document.getElementById('ghc_push_path');
+        if(panel && panel.scrollIntoView) panel.scrollIntoView({block:'center'});
+      }, 120);
+    }, 120);
+  };
+}
 async function pushRawTextFileToSharedRepo(path, text, commitMessage){
   const putData = await queueGithubWrite(()=>githubWriteFile({
     owner: SHARED_OWNER, repo: SHARED_REPO, branch: SHARED_BRANCH, path: path,
@@ -27510,30 +27650,16 @@ function initGithubCredentials(){
      whoever built the file and is the only trustworthy statement of what it
      actually is. Matches the #appVersion span in both consoles, which is why
      both were given the same markup. */
-  function ghcExtractVersion(text){
-    const m = /id="appVersion"[^>]*>\s*v?([0-9]+\.[0-9]+)\s*</i.exec(String(text||''));
-    return m ? m[1] : null;
-  }
-  const GHC_TRACKED_CONSOLES = [
-    {label:'EDDB Console',     path:'console/EDDB_Console.html'},
-    {label:'EDDB ISS Console', path:'console/EDDB_ISS_Console.html'}
-  ];
+
   /* Unauthenticated raw read. eddb-shared is public, so no token is needed
      and this works even before the push token has been entered, which is the
      state someone is most likely to be in when they want to know what is
      already up there. Deliberately not the contents API, which caps around
      1 MB and would return a placeholder for a 2 MB console instead of the
      file. Cache-busted, because a stale answer here is worse than none. */
-  async function ghcFetchRepoVersion(path){
-    const url = 'https://raw.githubusercontent.com/'+SHARED_OWNER+'/'+SHARED_REPO+'/'+SHARED_BRANCH+'/'+path+'?t='+Date.now();
-    const resp = await fetch(url, {cache:'no-store'});
-    if(resp.status === 404) return {state:'missing'};
-    if(!resp.ok) return {state:'error', detail:'HTTP '+resp.status};
-    const text = await resp.text();
-    const v = ghcExtractVersion(text);
-    return v ? {state:'ok', version:v, bytes:text.length}
-             : {state:'unversioned', bytes:text.length};
-  }
+  /* ghcFetchRepoVersion, ghcExtractVersion and GHC_TRACKED_CONSOLES moved to
+     module scope 2026-08-21 so the boot check and this panel read the repo
+     through one function rather than two that could drift apart. */
   async function ghcCheckRepoVersions(){
     const box = document.getElementById('ghc_repo_versions');
     const st = document.getElementById('ghc_repo_status');
@@ -28691,6 +28817,11 @@ async function startApp(){
   }catch(e){ /* pullAllGenericSyncOnLoad already catches per-key errors */ }
 
   migrateBcSlidesMeetingsToImHistory();
+
+  /* Fire and forget: it awaits a network round trip and nothing downstream
+     depends on the answer, so blocking startup on it would trade a real cost
+     for no benefit. */
+  checkConsoleRepoFreshness();
 
   mergeTemplateRegistryDefaults();
   /* Must run AFTER the backfill: the backfill is what puts the new lead-in
